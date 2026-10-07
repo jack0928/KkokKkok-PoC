@@ -150,7 +150,7 @@ summary { cursor: pointer; }
 .message.error { color: #984537; background: #fff1eb; border-color: #edcfc5; }
 .message.success { color: #476b3c; background: #edf5e7; border-color: #cfdfc2; }
 .message.loading { color: #5c7453; background: #f1f5ec; border-color: #d9e3ce; }
-.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.visually-hidden, input.visually-hidden { position: absolute; top: 0; left: 0; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .skip-link { position: absolute; z-index: 10; top: -80px; padding: 12px; background: white; }
 .skip-link:focus { top: 0; }
 @media (max-width: 1050px) { .hero-art { width: 250px; right: 0; opacity: .6; } .home-hero { padding-right: 230px; } .home-hero h1 { font-size: 36px; } .workspace-grid { grid-template-columns: 290px minmax(0, 1fr); gap: 22px; } .panel { padding: 18px; } .review-heading { flex-direction: column; } .save-bar { flex-direction: column; align-items: flex-end; } }

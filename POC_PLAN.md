@@ -4,6 +4,8 @@
 
 Experiment 1 Feature Discovery만 구현한다. 이미지 → Preview → VLM 후보 → Human Review → 직접 추가 → localStorage → JSON Export를 제공한다. Taxonomy는 Export 결과를 사람이 별도로 검토해 확정하며 편집/버전 관리 UI를 만들지 않는다.
 
+데스크톱 브라우저에서 사용한다. 모바일 UI 최적화는 현재 범위에 포함하지 않는다.
+
 VLM 결과는 Ground Truth가 아니다. 촬영 위치를 입력/추론하지 않으며, 확정되지 않은 모델 위험도를 사실이나 노출 확률로 표현하지 않는다.
 
 ## 실험 질문
@@ -59,3 +61,13 @@ localStorage 저장은 사용자가 명시적으로 누른다. 미완료 기록�
 회원가입, SNS API, Personal Exposure Profile, Embedding/Clustering, Risk Score, Privacy Edit, Python/Spring 서버, DB, 자동 Matching, Taxonomy UI, JSON Import, 정밀 Bounding Box는 제외한다.
 
 명시적 요청이 있을 때만 논리적 단위로 Conventional Commit을 생성한다. push는 별도 요청이 필요하다. Secret, 실제 사진, Export 결과, proposal.docx는 commit하지 않는다.
+
+## 현재 검증 기록 (2026-10-07)
+
+- lint, type check, production build 통과.
+- production 서버에서 잘못된 이미지/JSON, 10 MB 초과 요청, 이미지 hash 불일치 거부와 API 환경변수 미설정 503 응답 확인.
+- 합성 JPEG의 EXIF 제거 확인.
+- headless Chrome 데스크톱에서 Preview/동의/오류 표시, 모의 VLM 후보 검토, modelRisk medium / humanRisk high 분리, 사람의 직접 추가, localStorage 저장/새로고침/재조회, JSON Export, 동일 이미지 재연결/다른 이미지 거부, 기록 삭제 확인. 런타임 오류 없음.
+- 브라우저 검증에 사용한 Playwright/합성 이미지/스크린샷/Export 파일은 임시 디렉터리에만 두고 Repository에 포함하지 않음.
+- 실제 OpenAI Key와 실제 테스트 사진이 없어 실제 VLM 응답 품질은 아직 검증하지 않음. 다음 검증은 사용자 환경변수 설정 후 수행해야 함.
+- `npm audit --omit=dev`: 취약점 0건. 전체 감사에는 ESLint 간접 의존성인 braces 계열 high 5건이 남음. 조회 시 최신 braces도 영향 범위이며, 제안된 Next lint 설정 downgrade/강제 수정은 적용하지 않음.
