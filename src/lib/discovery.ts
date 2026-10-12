@@ -39,6 +39,7 @@ export const imageDescriptorSchema = z.object({
 export const preparedImageSchema = z.object({
   image: imageDescriptorSchema,
   dataUrl: z.string().startsWith("data:image/jpeg;base64,").max(8 * 1024 * 1024),
+  thumbnailDataUrl: z.string().startsWith("data:image/jpeg;base64,").max(200000).optional(),
 }).strict();
 
 export const humanReviewSchema = z.object({

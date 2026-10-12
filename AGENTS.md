@@ -9,7 +9,7 @@
 - 향후 Experiment 2는 별도 데이터로 Human Annotation → 확정 → VLM Detection 순서를 지키고 매칭은 사람이 수행한다. Human Annotation을 모델에 보내지 않는다.
 - API Key는 server-side 환경변수로만 사용한다. 모델명은 `OPENAI_MODEL`로 설정하며 코드에 fallback을 고정하지 않는다.
 - Secret, 제안서, 실제 사진, 실험 결과, private-data를 commit하지 않는다. 이미지/입력/모델 응답을 서버 로그에 출력하지 않는다.
-- 원본/분석 이미지를 서버 디스크나 localStorage에 보존하지 않는다. 브라우저 메모리 Preview와 결과 기록을 구분한다.
+- 원본/분석 이미지를 서버 디스크나 localStorage에 보존하지 않는다. 사용자 요청에 따라 결과 확인용 최대 480px JPEG 미리보기만 로컬 SQLite에 보존한다. 브라우저 메모리의 분석 Preview와 DB 미리보기·결과 기록을 구분한다.
 - 변경 후 `npm run lint`, `npm run typecheck`, `npm run build` 및 해당 기능의 기본 동작을 검증한다. 실제 API와 모의 응답 검증은 구분해서 보고한다.
 - 사용자 명시 요청 없이 commit 또는 push하지 않는다. Git history/remote를 임의로 변경하지 않는다.
 

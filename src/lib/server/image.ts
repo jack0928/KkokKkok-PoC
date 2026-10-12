@@ -43,7 +43,8 @@ export async function prepareImage(bytes: Buffer): Promise<PreparedImage> {
     const { data, info } = await sharp(bytes, { limitInputPixels: 40_000_000 })
       .rotate().resize(2048, 2048, { fit: "inside", withoutEnlargement: true })
       .flatten({ background: "#ffffff" }).jpeg({ quality: 95 }).toBuffer({ resolveWithObject: true });
-    return { image: { imageId: randomUUID(), originalSha256: sha256(bytes), analysisSha256: sha256(data),
+    const thumbnail = await sharp(data).resize(480, 480, { fit: "inside", withoutEnlargement: true }).jpeg({ quality: 65 }).toBuffer();
+    return { thumbnailDataUrl: `data:image/jpeg;base64,${thumbnail.toString("base64")}`, image: { imageId: randomUUID(), originalSha256: sha256(bytes), analysisSha256: sha256(data),
       width: info.width, height: info.height, mimeType: "image/jpeg",
       preprocessing: "auto-rotate; max-edge=2048; jpeg-quality=95; metadata-stripped; white-background" },
       dataUrl: `data:image/jpeg;base64,${data.toString("base64")}` };

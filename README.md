@@ -6,7 +6,7 @@ VLM 결과는 Ground Truth가 아니라 사람이 검토할 **Feature 후보**�
 
 ## 실행
 
-Node.js 22 이상을 사용합니다(가능하면 LTS). Next.js + TypeScript + React와 서버 Route Handler로 구성하며 별도 Backend/DB는 없습니다.
+Node.js 22.13 이상을 사용합니다(가능하면 LTS). Next.js + TypeScript + React와 서버 Route Handler로 구성하며 별도 Backend 서버 없이 로컬 SQLite DB를 사용합니다(Node 내장 SQLite 모듈).
 
 ```sh
 npm ci
@@ -31,8 +31,10 @@ OPENAI_MODEL=gpt-5.4-mini
 3. 외부 전송에 동의하고 **VLM으로 후보 탐색**을 누릅니다. 준비 단계는 OpenAI를 호출하지 않으며 분석 버튼을 눌렀을 때만 호출/비용이 발생합니다.
 4. 후보마다 Feature type, Observed cue, 영역, 적절성, 사람의 Risk Level과 이유를 검토합니다. 분류는 고정 Taxonomy가 아니며 새 type을 직접 입력할 수 있습니다.
 5. VLM이 놓친 Feature를 직접 추가하고 실험 메모를 남깁니다.
-6. **브라우저 저장**으로 localStorage에 저장하고 **JSON Export**로 장기 보존합니다. 저장은 명시적인 버튼 방식입니다. 미검토 기록도 저장/Export할 수 있습니다.
+6. 이미지 선택만으로는 저장하지 않습니다. 후보 탐색 실행 후 분석·검토 변경은 입력이 멈춘 뒤 약 1초 후 **로컬 DB에 자동 저장**됩니다. 저장 상태를 확인하세요. 실패하면 **저장 재시도** 또는 **JSON Export**로 보존합니다. 미검토 기록도 저장/Export할 수 있습니다.
 7. 저장된 기록을 다시 열어 수정합니다. Preview가 필요하면 같은 원본을 다시 연결합니다. 이미지 hash가 다른 파일은 연결되지 않습니다. 기록은 개별 삭제할 수 있습니다.
+8. 상단 **테스트 결과**(/results)에서 이미지와 요약이 있는 카드를 눌러 모델 원본, Human Review, 메모와 token usage를 확인합니다. 개별/전체 JSON Export를 제공합니다.
+9. 이전 localStorage 기록이 있으면 Feature Discovery의 **로컬 DB로 옮기기**를 이용하세요. 옮기기는 전체 성공 또는 전체 취소로 처리하며, 충돌 시 DB 기록을 덮어쓰지 않습니다. 브라우저 원본은 그대로 남습니다.
 
 ### Risk Level
 
@@ -48,13 +50,14 @@ OPENAI_MODEL=gpt-5.4-mini
 
 ## 보존 및 개인정보
 
-- localStorage에는 구조화된 결과만 저장합니다. 원본/분석 이미지, Base64, 원본 파일명, GPS는 저장하지 않습니다.
-- 브라우저 저장은 해당 origin/브라우저에서만 이용할 수 있으며, 브라우저 데이터를 삭제하면 기록도 사라집니다. 브라우저 용량/권한 오류는 화면에 표시합니다. 손상된 기존 저장 기록은 자동 덮어쓰지 않습니다.
+- SQLite에는 구조화된 결과와 최대 480px JPEG quality 65 미리보기만 저장합니다. 원본/분석본, 원본 파일명, GPS는 저장하지 않습니다. 미리보기에도 민감한 내용이 보일 수 있습니다. 새 localStorage 저장은 하지 않습니다.
+- DB 기본 경로는 `private-data/feature-discovery.sqlite`입니다. 첫 기록 조회 시 자동 생성합니다. `SQLITE_PATH` 서버 환경변수로 경로를 변경할 수 있습니다. 브라우저 데이터를 삭제해도 DB 기록은 남습니다. DB 저장 실패·다른 탭의 변경 충돌은 화면에 표시하며 자동 재시도하지 않습니다. 편집을 다시 하거나 저장 재시도를 눌러 재시도할 수 있습니다. 손상된 기존 저장 기록은 덮어쓰지 않습니다.
+- DB 파일을 백업하려면 서버를 종료한 후 복사하세요. 결과 공유는 JSON Export를 사용합니다(미리보기 이미지는 JSON에 포함하지 않음). 로컬 DB는 다른 사람에게 접속 권한이나 공동 검토 기능을 제공하지 않습니다.
 - JSON에는 모델 원본 JSON 텍스트·구조화된 후보, Human Review, 이미지 식별자/hash, 모델/프롬프트 버전/시간/token usage가 포함됩니다. 이미지 재검토용 파일은 연구자가 비공개로 따로 관리해야 합니다.
-- 서버는 이미지를 요청 메모리에서만 처리하고 디스크에 보존하지 않습니다. 브라우저 Preview는 현재 페이지 메모리에만 있습니다. 새 실험/다른 기록을 열면 해당 참조를 해제합니다.
+- 원본/분석 이미지는 요청 및 브라우저 메모리에서만 처리합니다. 결과 확인용 작은 미리보기만 DB에 보존합니다. 새 실험/다른 기록을 열면 브라우저의 분석 Preview 참조를 해제합니다.
 - OpenAI 요청은 `store: false`를 사용하지만 OpenAI 측의 모든 보존을 없애는 것은 아닙니다. 기본 abuse monitoring 로그 등 별도 정책이 적용됩니다. [공식 데이터 보존 문서](https://developers.openai.com/api/docs/guides/your-data)를 확인하세요.
 - **관찰된 간판 글자·주소 등 결과 텍스트도 민감정보일 수 있습니다.** Export JSON과 테스트 이미지는 공개 Repository에 넣지 마세요.
-- 결과 파일은 `experiment-exports/` 또는 `private-data/`, 테스트 이미지는 `test-images/`에 보관하세요. 이 디렉터리와 앱이 생성하는 `feature-discovery-*.json`, 사진 확장자, `proposal.docx`, `.env*`(예시 제외)는 Git에서 제외합니다. 그 밖의 개인정보 파일도 commit 전 확인해야 합니다.
+- SQLite 파일(`*.sqlite`, `*.db`)과 부속 파일은 Git에서 제외합니다. 결과 파일은 `experiment-exports/` 또는 `private-data/`, 테스트 이미지는 `test-images/`에 보관하세요. 이 디렉터리와 앱이 생성하는 `feature-discovery-*.json`, 사진 확장자, `proposal.docx`, `.env*`(예시 제외)는 Git에서 제외합니다. 그 밖의 개인정보 파일도 commit 전 확인해야 합니다.
 - 이 앱은 localhost에서 사용하는 연구용 도구입니다. 인증/공개 운영용 rate limiting은 없으므로 그대로 공개 배포하지 않습니다.
 
 ## 파일 구조
@@ -66,7 +69,10 @@ src/app/api/prepare-image/       이미지 검증·방향/크기 정리·메타�
 src/app/api/feature-discovery/   서버 전용 OpenAI 호출
 src/components/                 실험 작업 공간, 업로드, Cue 검토
 src/lib/discovery.ts             스키마와 모델/사람 기록 구조
-src/lib/storage.ts               브라우저 저장·JSON Export
+src/lib/storage.ts               DB 요청·기존 브라우저 기록 옮기기·JSON Export
+src/lib/server/records.ts         SQLite 저장·조회·삭제·모델 원본 보호
+src/app/api/discovery-records/    로컬 기록 API
+src/app/results/                 저장 결과·작은 이미지·검토 비교
 src/lib/server/image.ts          메모리 이미지 처리·요청 크기 제한
 .github/pull_request_template.md
 AGENTS.md / POC_PLAN.md
@@ -87,7 +93,7 @@ npm start
 - 환경변수 미설정/API 인증/한도 오류가 탐지 0건과 구분되는지
 - 실제 VLM 호출과 후보 표시, 모델 원본과 사람 위험도 차이 보존
 - 사람의 추가 Feature, 부적절/판단 보류, 미검토 상태 저장
-- 브라우저 저장 → 새로고침 → 기록 열기 → 같은 원본 다시 연결
+- 자동 저장 → 새로고침/서버 재시작 → 결과 페이지의 카드 상세 → 같은 원본 다시 연결
 - 다른 이미지 연결 거부, 새 실험에서 독립 기록 생성
 - JSON의 modelRisk/humanRisk·이유 분리 및 이미지/Secret 미포함
 - 기록 삭제, 데스크톱 화면, 키보드 조작

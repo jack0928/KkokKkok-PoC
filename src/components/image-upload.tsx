@@ -30,7 +30,7 @@ export function ImageUpload({ preview, disabled, attachedRecord, dimensions, onS
           <span className="upload-label">파일 찾아보기</span>
         </button>
       )}
-      <p className="caption">이미지 원본은 저장하지 않습니다. 방향·크기를 정리하고 메타데이터를 제거한 Preview를 VLM에 전달합니다.</p>
+      <p className="caption">원본·분석본은 저장하지 않습니다. 방향·크기를 정리하고 메타데이터를 제거한 Preview를 VLM에 전달합니다.</p>
     </div>
   );
 }

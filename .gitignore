@@ -18,6 +18,10 @@ next-env.d.ts
 proposal.docx
 test-images/
 private-data/
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
 experiment-exports/
 feature-discovery-*.json
 kkokkkok-discovery-*.json
