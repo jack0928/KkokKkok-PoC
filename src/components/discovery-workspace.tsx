@@ -106,7 +106,24 @@ export function DiscoveryWorkspace() {
 
   return (
     <>
-      <div className="page-heading"><div><div className="eyebrow">EXPERIMENT 01 / FEATURE DISCOVERY</div><h1>위치 단서 탐색</h1><p>사진 속 후보를 발견하고, 사람의 판단을 기록하세요.</p></div><button type="button" className="button secondary" disabled={!!busy} onClick={() => { if (!mayLeave()) return; setRecord(null); setPreview(null); setConsent(false); setDirty(false); setError(""); setNotice(""); }}>새 실험 <span aria-hidden="true">＋</span></button></div>
+      <div className="page-heading"><div><h1>Feature Discovery 테스트</h1><p>Experiment 1 · 이미지 분석 → 후보 검토 → 결과 저장</p></div><button type="button" className="button secondary" disabled={!!busy} onClick={() => { if (!mayLeave()) return; setRecord(null); setPreview(null); setConsent(false); setDirty(false); setError(""); setNotice(""); }}>새 실험 <span aria-hidden="true">＋</span></button></div>
+      <section className="discovery-guide" aria-label="Feature Discovery 가이드">
+        <div className="guide-purpose">
+          <div><h2>왜 하나요?</h2><p>사진 속 어떤 요소를 위치 단서로 정의할지 탐색합니다. VLM과 사람의 판단 차이, 놓친 단서와 불필요한 후보를 확인합니다.</p></div>
+          <div><h2>결과는 어디에 쓰나요?</h2><p>저장·Export한 후보와 검토 이유를 사람이 모아 살펴보고, Feature 분류와 위험도 판단 기준을 정리합니다. 이 기준은 추후 Detection Evaluation에 사용하며, 평가에는 별도의 이미지를 씁니다.</p></div>
+        </div>
+        <details className="guide-method">
+          <summary>테스트 방법 보기</summary>
+          <ol>
+            <li>사용 권한이 있는 JPEG·PNG·WebP 이미지(최대 10 MB)를 선택하고 Preview를 확인합니다.</li>
+            <li>외부 전송에 동의한 뒤 ‘VLM으로 후보 탐색’을 누릅니다. 이때 이미지가 OpenAI로 전송되고 API 비용이 발생합니다.</li>
+            <li>후보마다 분류·관찰 내용·영역을 확인하고, 적절성·사람의 위험도·판단 이유를 작성합니다. 위험도는 외부 정보와 결합했을 때 위치 식별에 얼마나 유용한지를 기준으로 판단합니다.</li>
+            <li>놓친 Feature를 직접 추가하고, 애매한 기준이나 의문점은 실험 메모에 남깁니다. 판단하기 어려운 항목은 ‘판단 보류’로 기록합니다.</li>
+            <li>‘브라우저 저장’을 누르고, 장기 보존할 결과는 JSON Export합니다. 이미지 자체는 저장되지 않으므로 원본은 비공개로 따로 관리합니다.</li>
+          </ol>
+          <p>모델 원본과 사람의 검토는 따로 보존합니다. 결과는 확정된 정답이나 탐지 성능 점수가 아니며, 다시 분석하려면 ‘새 실험’을 시작하세요.</p>
+        </details>
+      </section>
       <div className="research-banner"><strong>VLM 결과 ≠ Ground Truth</strong><span>AI의 제안은 Feature 후보를 탐색하기 위한 참고 자료입니다. 최종 판단은 사람이 합니다.</span></div>
       <ol className="steps" aria-label="실험 순서"><li className={!record ? "current" : "done"}><span>01</span> 이미지 준비</li><li className={record && !record.analysis ? "current" : record?.analysis ? "done" : ""}><span>02</span> VLM 후보 탐색</li><li className={record?.analysis ? "current" : ""}><span>03</span> 사람 검토·추가</li><li><span>04</span> 저장·Export</li></ol>
       <div aria-live="polite">{error && <p className="message error" role="alert">{error}</p>}{notice && <p className="message success">{notice}</p>}{busy && <p className="message loading" role="status">{busy === "prepare" ? "이미지를 준비하고 있습니다…" : "VLM이 Feature 후보를 탐색하고 있습니다. 최대 약 90초가 걸릴 수 있습니다…"}</p>}</div>
@@ -119,13 +136,13 @@ export function DiscoveryWorkspace() {
             {!record?.analysis && <><div className="privacy-note"><strong>외부 API 전송 안내</strong><p>분석 버튼을 누르면 이 이미지가 OpenAI로 전송되며 API 비용이 발생합니다. 서버에 사진을 저장하지 않지만 OpenAI의 별도 데이터 보존 정책이 적용됩니다.</p><label className="checkbox-label"><input type="checkbox" disabled={!!busy || !record} checked={consent} onChange={(e) => setConsent(e.target.checked)} />내가 사용할 권한이 있는 이미지이며, 외부 전송에 동의합니다.</label></div><button type="button" className="button primary wide" onClick={analyze} disabled={!record || !preview || !consent || !!busy}>VLM으로 후보 탐색 <span aria-hidden="true">↗</span></button></>}
             {record?.analysis && <div className="analysis-info"><span className="pill green">분석 완료</span><p>{record.analysis.responseModel}</p><p className="caption">한 기록의 모델 원본은 덮어쓰지 않습니다. 재분석은 새 실험으로 진행하세요.</p></div>}
           </section>
-          <section className="panel risk-guide"><div className="eyebrow">RISK LEVEL의 의미</div><h2>눈에 띄는 정도가 아닌,<br />위치 식별의 유용성</h2><p>{RISK_DEFINITION}</p><dl><div><dt><span className="risk-badge low">low</span></dt><dd>일반적 단서로, 위치를 좁히는 데 제한적</dd></div><div><dt><span className="risk-badge medium">medium</span></dt><dd>다른 정보와 조합하면 위치를 좁히는 데 유용</dd></div><div><dt><span className="risk-badge high">high</span></dt><dd>구체적인 식별자로, 위치 특정에 매우 유용</dd></div></dl><p className="caption">탐지 confidence나 실제 노출 확률을 의미하지 않습니다. 잠정 기준이며 사람의 이유를 함께 기록합니다.</p></section>
+          <section className="panel risk-guide"><h2>Risk Level 기준</h2><p>{RISK_DEFINITION}</p><dl><div><dt><span className="risk-badge low">low</span></dt><dd>일반적 단서로, 위치를 좁히는 데 제한적</dd></div><div><dt><span className="risk-badge medium">medium</span></dt><dd>다른 정보와 조합하면 위치를 좁히는 데 유용</dd></div><div><dt><span className="risk-badge high">high</span></dt><dd>구체적인 식별자로, 위치 특정에 매우 유용</dd></div></dl><p className="caption">탐지 confidence나 실제 노출 확률을 의미하지 않습니다. 잠정 기준이며 사람의 이유를 함께 기록합니다.</p></section>
         </aside>
 
         <section className="review-column" aria-label="Feature 후보 검토">
           <div className="review-heading"><div><h2>Feature 후보 & Human Review <span className="count">{record?.humanReviews.length ?? 0}</span></h2><p>모델 원본은 보존하고, 사람의 검토는 별도로 기록합니다.</p></div>{record && <span className="pill">검토 작성 {reviewed} / {record.humanReviews.length}</span>}</div>
           <FeatureTypeSuggestions />
-          {!record?.analysis && <div className="empty-state"><div className="empty-icon" aria-hidden="true">⌕</div><h3>{record ? "분석을 시작해 후보를 발견하세요" : "첫 번째 이미지로 탐색을 시작하세요"}</h3><p>텍스트, 로고, 건물, 교통시설, 환경 단서…<br />분류는 잠정적인 예시이며 직접 새 Feature type을 입력할 수 있습니다.</p></div>}
+          {!record?.analysis && <div className="empty-state"><h3>{record ? "분석을 시작해 후보를 발견하세요" : "첫 번째 이미지로 탐색을 시작하세요"}</h3><p>텍스트, 로고, 건물, 교통시설, 환경 단서…<br />분류는 잠정적인 예시이며 직접 새 Feature type을 입력할 수 있습니다.</p></div>}
           {record?.analysis && record.analysis.modelOutput.candidates.length === 0 && <div className="empty-state compact"><h3>VLM이 제안한 후보가 없습니다.</h3><p>위험이 없다는 뜻은 아닙니다. 이미지를 직접 검토하고 놓친 Feature를 추가해 주세요.</p></div>}
           {record?.analysis && record.analysis.modelOutput.limitations.length > 0 && <details className="limitations"><summary>VLM의 관찰 한계 보기</summary><ul>{record.analysis.modelOutput.limitations.map((item, i) => <li key={i}>{item}</li>)}</ul></details>}
           {record?.humanReviews.map((review, index) => <CueReview key={review.cueId} review={review} candidate={review.modelCandidateIndex === null ? undefined : record.analysis?.modelOutput.candidates[review.modelCandidateIndex]} number={index + 1} disabled={!!busy} onChange={(patch) => updateReview(review.cueId, patch)} onRemove={() => changeRecord({ ...record, humanReviews: record.humanReviews.filter((r) => r.cueId !== review.cueId) })} />)}

@@ -14,8 +14,8 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <a className="skip-link" href="#main">본문으로 이동</a>
         <header className="site-header">
           <div className="header-inner">
-            <Link className="brand" href="/" aria-label="꼭꼭 홈"><span className="brand-mark">꼭</span><span>꼭꼭 <small>Location Cue Lab</small></span></Link>
-            <nav aria-label="주 메뉴"><Link href="/feature-discovery">Feature Discovery <span aria-hidden="true">↗</span></Link><span className="poc-badge">RESEARCH PoC</span></nav>
+            <Link className="brand" href="/" aria-label="꼭꼭 홈"><span>꼭꼭 <small>Location Cue Lab</small></span></Link>
+            <nav aria-label="주 메뉴"><Link href="/">홈</Link><Link href="/feature-discovery">Feature Discovery</Link><Link href="/detection-evaluation">Detection Evaluation</Link></nav>
           </div>
         </header>
         <main id="main" className="main-container">{children}</main>

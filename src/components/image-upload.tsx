@@ -25,10 +25,9 @@ export function ImageUpload({ preview, disabled, attachedRecord, dimensions, onS
         </div>
       ) : (
         <button type="button" className="upload-zone" disabled={disabled} onClick={() => input.current?.click()}>
-          <span className="upload-symbol" aria-hidden="true">＋</span>
           <strong>{attachedRecord ? "같은 이미지 다시 연결" : "테스트 이미지 선택"}</strong>
           <span>{attachedRecord ? "저장된 원본 hash와 비교합니다" : "JPEG, PNG, WebP · 최대 10 MB"}</span>
-          <span className="upload-label">파일 찾아보기 <span aria-hidden="true">↗</span></span>
+          <span className="upload-label">파일 찾아보기</span>
         </button>
       )}
       <p className="caption">이미지 원본은 저장하지 않습니다. 방향·크기를 정리하고 메타데이터를 제거한 Preview를 VLM에 전달합니다.</p>
