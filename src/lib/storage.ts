@@ -1,4 +1,4 @@
-import { DiscoveryRecord, discoveryRecordSchema, STORAGE_KEY, storedRecordsSchema, resultsSchema } from "./discovery";
+import { DiscoveryRecord, discoveryRecordSchema, STORAGE_KEY, storedRecordsSchema, resultsSchema, recordSummarySchema, recordDetailSchema } from "./discovery";
 
 async function recordsRequest(method: string, body?: unknown): Promise<DiscoveryRecord[]> {
   const response = await fetch("/api/discovery-records", {
@@ -13,8 +13,24 @@ async function recordsRequest(method: string, body?: unknown): Promise<Discovery
 
 export function readRecords(): Promise<DiscoveryRecord[]> { return recordsRequest("GET"); }
 
-export function saveRecord(record: DiscoveryRecord, expectedUpdatedAt: string | null, thumbnailDataUrl: string | null): Promise<DiscoveryRecord[]> {
-  return recordsRequest("POST", { action: "save", record: discoveryRecordSchema.parse(record), expectedUpdatedAt, thumbnailDataUrl });
+export async function saveRecord(record: DiscoveryRecord, expectedUpdatedAt: string | null, thumbnailDataUrl: string | null): Promise<DiscoveryRecord> {
+  const response = await fetch("/api/discovery-records", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "save", record: discoveryRecordSchema.parse(record), expectedUpdatedAt, thumbnailDataUrl }) });
+  const json = await response.json();
+  if (!response.ok) throw new Error(json.error || "저장 실패");
+  return discoveryRecordSchema.parse(json.record);
+}
+
+export async function readSummaries() {
+  const response = await fetch("/api/discovery-records?view=summary", { cache: "no-store" });
+  if (!response.ok) throw new Error("진행 목록을 읽지 못했습니다.");
+  return recordSummarySchema.array().parse((await response.json()).summaries);
+}
+
+export async function readRecord(id: string) {
+  const response = await fetch(`/api/discovery-records?record=${id}`, { cache: "no-store" });
+  if (!response.ok) throw new Error("기록을 읽지 못했습니다.");
+  return recordDetailSchema.parse(await response.json());
 }
 
 export async function readResults() {
@@ -24,8 +40,10 @@ export async function readResults() {
   return resultsSchema.parse(json);
 }
 
-export function deleteRecord(recordId: string, expectedUpdatedAt: string): Promise<DiscoveryRecord[]> {
-  return recordsRequest("DELETE", { recordId, expectedUpdatedAt });
+export async function deleteRecord(recordId: string, expectedUpdatedAt: string): Promise<void> {
+  const response = await fetch("/api/discovery-records", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ recordId, expectedUpdatedAt }) });
+  const json = await response.json();
+  if (!response.ok) throw new Error(json.error || "삭제 실패");
 }
 
 // Legacy storage is read only; transfer never deletes or overwrites browser copies.

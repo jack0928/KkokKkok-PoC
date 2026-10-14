@@ -79,7 +79,7 @@ export const discoveryRecordSchema = z.object({
   notes: z.string().max(5000),
   reviewCompletedAt: z.string().datetime().nullable().default(null),
 }).strict().superRefine((record, context) => {
-  if (record.reviewCompletedAt && (!record.analysis || record.humanReviews.some((item) => item.appropriateness === "unreviewed" || !item.humanReason.trim() || (item.humanRisk === null && item.appropriateness !== "uncertain")))) {
+  if (record.reviewCompletedAt && (!record.analysis || record.humanReviews.some((item) => !isReviewWritten(item)))) {
     context.addIssue({ code: "custom", message: "Completed review requires an analysis and reviewed cues" });
   }
   const indexes = new Set<number>();
@@ -112,7 +112,7 @@ export type PreparedImage = z.infer<typeof preparedImageSchema>;
 export type Analysis = z.infer<typeof analysisSchema>;
 
 export function isReviewWritten(item: HumanReview): boolean {
-  return item.appropriateness !== "unreviewed" && !!item.humanReason.trim() && (item.humanRisk !== null || item.appropriateness === "uncertain");
+  return !!item.featureType.trim() && !!item.observedCue.trim() && item.appropriateness !== "unreviewed" && !!item.humanReason.trim() && (item.humanRisk !== null || item.appropriateness !== "appropriate");
 }
 
 export function newRecord(image: PreparedImage["image"]): DiscoveryRecord {
@@ -164,3 +164,19 @@ export const resultsSchema = z.object({
   jobs: z.record(z.string().uuid(), jobInfoSchema).default({}),
 });
 export type JobInfo = z.infer<typeof jobInfoSchema>;
+
+
+export const recordSummarySchema = z.object({
+  recordId: z.string().uuid(), image: imageDescriptorSchema,
+  createdAt: z.string().datetime(), updatedAt: z.string().datetime(),
+  hasAnalysis: z.boolean(), featureCount: z.number().int(), reviewedCount: z.number().int(),
+  reviewStatus: z.enum(["unreviewed", "in_progress", "completed"]),
+  featureTypes: z.array(z.string()), model: z.string().nullable(), job: jobInfoSchema,
+  hasThumbnail: z.boolean(),
+});
+export const recordDetailSchema = z.object({
+  record: discoveryRecordSchema, job: jobInfoSchema,
+  thumbnailDataUrl: z.string().nullable(), nextId: z.string().uuid().nullable(),
+});
+export type RecordSummary = z.infer<typeof recordSummarySchema>;
+export type RecordDetail = z.infer<typeof recordDetailSchema>;

@@ -2,6 +2,7 @@ import { z } from "zod";
 import sharp from "sharp";
 import { checkRequest } from "@/lib/server/access";
 import { InputError } from "@/lib/server/image";
+import { storedThumbnail } from "@/lib/server/records";
 import { storedImage } from "@/lib/server/jobs";
 
 export const runtime = "nodejs";
@@ -10,6 +11,10 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     checkRequest(request);
     const { id } = await context.params;
     if (!z.string().uuid().safeParse(id).success) throw new InputError("기록 ID가 올바르지 않습니다.");
+    if (new URL(request.url).searchParams.get("kind") === "thumbnail") {
+      const thumbnail = storedThumbnail(id);
+      return thumbnail ? new Response(new Uint8Array(thumbnail), { headers: { "Content-Type": "image/jpeg", "Cache-Control": "private, max-age=3600", "X-Content-Type-Options": "nosniff" } }) : Response.json({ error: "미리보기 없음" }, { status: 404 });
+    }
     const bytes = storedImage(id, new URL(request.url).searchParams.get("kind") === "analysis" ? "analysis" : "original");
     if (!bytes) return Response.json({ error: "저장된 원본이 없습니다." }, { status: 404 });
     const metadata = await sharp(bytes, { limitInputPixels: 40_000_000 }).metadata();

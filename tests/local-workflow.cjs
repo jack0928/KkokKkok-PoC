@@ -64,6 +64,10 @@ async function run() {
   assert.equal(discovery.reviewStatus({...current,humanReviews:current.humanReviews.map(item=>({...item,featureType:"수정한 분류"}))}),"in_progress");
   const reviewing = {...current,humanReviews:current.humanReviews.map(item=>({...item,appropriateness:"uncertain",humanReason:"판단 근거가 부족함"}))};
   assert.equal(discovery.reviewStatus(reviewing),"in_progress");
+  const blank = {...discovery.newHumanCue(),appropriateness:"appropriate",humanRisk:"high",humanReason:"합성 이유"};
+  assert(!discovery.discoveryRecordSchema.safeParse({...current,humanReviews:[...reviewing.humanReviews,blank],reviewCompletedAt:new Date().toISOString()}).success);
+  assert(discovery.isReviewWritten({...reviewing.humanReviews[0],appropriateness:"inappropriate",humanRisk:null}));
+  assert(!discovery.isReviewWritten({...reviewing.humanReviews[0],appropriateness:"appropriate",humanRisk:null}));
   const final = records.persistRecord({...reviewing,reviewCompletedAt:new Date().toISOString()},current.updatedAt).find(item=>item.recordId===current.recordId);
   assert.equal(discovery.reviewStatus(final),"completed");
   assert.equal(final.humanReviews[0].humanRisk,null);
@@ -87,12 +91,40 @@ async function run() {
   assert.equal(savedLegacy.reviewCompletedAt,null);
   await jobs.attachOriginal(savedLegacy.recordId,bytes,savedLegacy.updatedAt);
   assert(records.listResults().jobs[savedLegacy.recordId].hasOriginal);
+  const summaries = records.listSummaries();
+  assert(!JSON.stringify(summaries).includes("rawOutputText"));
+  assert(!JSON.stringify(summaries).includes("base64"));
+  assert.equal(records.recordDetail(final.recordId).record.recordId,final.recordId);
+  const originalPath=path.join(root,"images",final.recordId+".original");
+  const analysisPath=path.join(root,"images",final.recordId+".jpeg");
+  const normalRename=fs.renameSync;
+  fs.renameSync=(source,target)=>{ if(source===analysisPath) throw new Error("synthetic rename failure"); return normalRename(source,target); };
+  try { assert.throws(()=>records.removeRecord(final.recordId,final.updatedAt)); } finally { fs.renameSync=normalRename; }
+  assert.deepEqual(fs.readFileSync(originalPath),bytes);
+  assert(fs.existsSync(analysisPath));
+  assert(records.recordDetail(final.recordId));
+  // Simulate a crash before the DB commit: staged files must be restored on access.
+  fs.renameSync(originalPath,originalPath+".pending-delete");
+  assert(records.recordDetail(final.recordId));
+  assert.deepEqual(fs.readFileSync(originalPath),bytes);
   records.removeRecord(final.recordId,final.updatedAt);
   assert.equal(jobs.storedImage(final.recordId,"original"),null);
   assert(!fs.existsSync(path.join(root,"images",final.recordId+".original")));
   assert(!fs.existsSync(path.join(root,"images",final.recordId+".jpeg")));
   assert(!JSON.stringify(records.listResults().records).includes(root));
   assert(first && second);
+  const {ReviewSaveQueue}=require("../src/lib/review-save-queue.ts");
+  const pending=[];
+  const queue=new ReviewSaveQueue(current,(snapshot,version)=>new Promise(resolve=>pending.push({snapshot,version,resolve})),()=>{});
+  queue.update({...current,notes:"first edit"});
+  const firstSave=queue.save(); await Promise.resolve();
+  queue.update({...queue.current,notes:"second edit during save"});
+  pending[0].resolve({...pending[0].snapshot,updatedAt:new Date(Date.parse(current.updatedAt)+1).toISOString()});
+  assert(await firstSave); assert.equal(queue.current.notes,"second edit during save"); assert(queue.dirty);
+  const secondSave=queue.save(); await Promise.resolve();
+  assert.equal(pending[1].version,new Date(Date.parse(current.updatedAt)+1).toISOString());
+  pending[1].resolve({...pending[1].snapshot,updatedAt:new Date(Date.parse(current.updatedAt)+2).toISOString()});
+  assert(await secondSave); assert(!queue.dirty); assert.equal(queue.current.notes,"second edit during save");
   console.log("PASS: upload consent, private originals, EXIF stripping, sequential queue, partial failure/retry, restart recovery, legacy attach, review status/completion, model immutability, optimistic conflict, local access and file deletion. Mock VLM only.");
 }
 

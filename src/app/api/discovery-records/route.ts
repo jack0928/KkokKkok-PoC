@@ -3,7 +3,7 @@ import { z } from "zod";
 import sharp from "sharp";
 import { discoveryRecordSchema, storedRecordsSchema } from "@/lib/discovery";
 import { InputError, readLimitedBody } from "@/lib/server/image";
-import { listRecords, listResults, migrateRecords, persistRecord, RecordConflict, removeRecord } from "@/lib/server/records";
+import { listRecords, listResults, migrateRecords, persistRecord, RecordConflict, removeRecord, listSummaries, recordDetail } from "@/lib/server/records";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,7 +45,16 @@ function failure(error: unknown) {
 export async function GET(request: Request) {
   try {
     checkRequest(request);
-    if (new URL(request.url).searchParams.get("thumbnails") === "1") return Response.json(listResults(), { headers: { "Cache-Control": "no-store" } });
+    const url = new URL(request.url);
+    if (url.searchParams.get("view") === "summary") return Response.json({ summaries: listSummaries() }, { headers: { "Cache-Control": "no-store" } });
+    const id = url.searchParams.get("record");
+    if (id) {
+      if (!z.string().uuid().safeParse(id).success) throw new InputError("기록 ID가 올바르지 않습니다.");
+      const detail = recordDetail(id);
+      if (!detail) throw new InputError("기록을 찾을 수 없습니다.", 404);
+      return Response.json(detail, { headers: { "Cache-Control": "no-store" } });
+    }
+    if (url.searchParams.get("thumbnails") === "1") return Response.json(listResults(), { headers: { "Cache-Control": "no-store" } });
     return result(listRecords());
   }
   catch (error) { return failure(error); }
@@ -56,8 +65,12 @@ export async function POST(request: Request) {
     checkRequest(request);
     const parsed = saveSchema.safeParse(await jsonBody(request));
     if (!parsed.success) throw new InputError("실험 기록 형식이 올바르지 않습니다.");
-    return result(parsed.data.action === "save"
-      ? persistRecord(parsed.data.record, parsed.data.expectedUpdatedAt, await thumbnailBytes(parsed.data.thumbnailDataUrl)) : migrateRecords(parsed.data.records));
+    if (parsed.data.action === "save") {
+      const submitted = parsed.data.record;
+      const saved = persistRecord(submitted, parsed.data.expectedUpdatedAt, await thumbnailBytes(parsed.data.thumbnailDataUrl));
+      return Response.json({ record: saved.find((item) => item.recordId === submitted.recordId) }, { headers: { "Cache-Control": "no-store" } });
+    }
+    return result(migrateRecords(parsed.data.records));
   } catch (error) { return failure(error); }
 }
 
@@ -66,6 +79,7 @@ export async function DELETE(request: Request) {
     checkRequest(request);
     const parsed = deleteSchema.safeParse(await jsonBody(request));
     if (!parsed.success) throw new InputError("삭제할 기록 형식이 올바르지 않습니다.");
-    return result(removeRecord(parsed.data.recordId, parsed.data.expectedUpdatedAt));
+    removeRecord(parsed.data.recordId, parsed.data.expectedUpdatedAt);
+    return Response.json({ deleted: parsed.data.recordId });
   } catch (error) { return failure(error); }
 }

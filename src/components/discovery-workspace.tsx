@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { MAX_IMAGE_BYTES, DiscoveryRecord, JobInfo } from "@/lib/discovery";
-import { readResults } from "@/lib/storage";
+import { MAX_IMAGE_BYTES, RecordSummary, JobInfo } from "@/lib/discovery";
+import { readSummaries } from "@/lib/storage";
 import { UploadPreview } from "./upload-preview";
 
 const labels: Record<JobInfo["status"], string> = { queued: "분석 대기", analyzing: "분석 중", completed: "분석 완료 · 검토 가능", failed: "분석 실패", legacy: "기존 기록" };
@@ -12,7 +12,7 @@ export function DiscoveryWorkspace() {
   const [files, setFiles] = useState<File[]>([]);
   const [consent, setConsent] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [records, setRecords] = useState<DiscoveryRecord[]>([]);
+  const [records, setRecords] = useState<RecordSummary[]>([]);
   const [jobs, setJobs] = useState<Record<string, JobInfo>>({});
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -24,8 +24,8 @@ export function DiscoveryWorkspace() {
     let timer: ReturnType<typeof setTimeout>;
     async function refresh() {
       try {
-        const data = await readResults();
-        if (!cancelled) { setRecords(data.records); setJobs(data.jobs); }
+        const data = await readSummaries();
+        if (!cancelled) { setRecords(data); setJobs(Object.fromEntries(data.map((item) => [item.recordId, item.job]))); }
       } catch { if (!cancelled) setError("진행 상태를 읽지 못했습니다. 서버와 DB 설정을 확인해 주세요."); }
       if (!cancelled) timer = setTimeout(refresh, 2000);
     }
@@ -85,6 +85,6 @@ export function DiscoveryWorkspace() {
       <p className="caption">로컬 서버와 작업 프로세스가 켜져 있어야 합니다. 업로드가 끝날 때까지는 페이지를 열어두세요. 실패한 분석은 자동 재시도하지 않습니다.</p>
     </section>
     <div className="messages" aria-live="polite">{error && <p role="alert" className="message error">{error}</p>}{notice && <p className="message success">{notice}</p>}</div>
-    <section className="saved-section"><div className="panel-heading"><h2>분석 진행 상황</h2></div><div className="saved-list">{records.map((record) => <article className="saved-record" key={record.recordId}><div><strong>이미지 {record.image.imageId.slice(0, 8)}</strong><p><span className={`status-badge status-${record.analysis ? "unreviewed" : jobs[record.recordId]?.status ?? "legacy"}`}>{record.analysis ? "분석 완료 · 검토 가능" : labels[jobs[record.recordId]?.status ?? "legacy"]}</span></p>{jobs[record.recordId]?.error && <p>{jobs[record.recordId].error}</p>}</div>{record.analysis ? <Link className="button secondary small" href={`/review/${record.recordId}`}>사람 검토</Link> : jobs[record.recordId]?.status === "failed" && jobs[record.recordId]?.hasOriginal ? <button className="button secondary small" onClick={() => retry(record.recordId)}>분석 재시도</button> : null}</article>)}</div>{!records.length && <p className="caption">등록된 분석이 없습니다.</p>}</section>
+    <section className="saved-section"><div className="panel-heading"><h2>분석 진행 상황</h2></div><div className="saved-list">{records.map((record) => <article className="saved-record" key={record.recordId}><div><strong>이미지 {record.image.imageId.slice(0, 8)}</strong><p><span className={`status-badge status-${record.hasAnalysis ? "unreviewed" : jobs[record.recordId]?.status ?? "legacy"}`}>{record.hasAnalysis ? "분석 완료 · 검토 가능" : labels[jobs[record.recordId]?.status ?? "legacy"]}</span></p>{jobs[record.recordId]?.error && <p>{jobs[record.recordId].error}</p>}</div>{record.hasAnalysis ? <Link className="button secondary small" href={`/review/${record.recordId}`}>사람 검토</Link> : jobs[record.recordId]?.status === "failed" && jobs[record.recordId]?.hasOriginal ? <button className="button secondary small" onClick={() => retry(record.recordId)}>분석 재시도</button> : null}</article>)}</div>{!records.length && <p className="caption">등록된 분석이 없습니다.</p>}</section>
   </>;
 }
