@@ -52,6 +52,7 @@ export const humanReviewSchema = z.object({
   appropriateness: z.enum(["unreviewed", "appropriate", "inappropriate", "uncertain"]),
   humanRisk: riskSchema.nullable(),
   humanReason: reason,
+  reasonNeedsConfirmation: z.boolean().default(false),
 }).strict();
 
 export const analysisSchema = z.object({
@@ -112,7 +113,7 @@ export type PreparedImage = z.infer<typeof preparedImageSchema>;
 export type Analysis = z.infer<typeof analysisSchema>;
 
 export function isReviewWritten(item: HumanReview): boolean {
-  return !!item.featureType.trim() && !!item.observedCue.trim() && item.appropriateness !== "unreviewed" && !!item.humanReason.trim() && (item.humanRisk !== null || item.appropriateness !== "appropriate");
+  return !!item.featureType.trim() && !!item.observedCue.trim() && !item.reasonNeedsConfirmation && item.appropriateness !== "unreviewed" && !!item.humanReason.trim() && (item.humanRisk !== null || item.appropriateness !== "appropriate");
 }
 
 export function newRecord(image: PreparedImage["image"]): DiscoveryRecord {
@@ -125,7 +126,7 @@ export function newRecord(image: PreparedImage["image"]): DiscoveryRecord {
 export function newHumanCue(): HumanReview {
   return { cueId: crypto.randomUUID(), modelCandidateIndex: null, source: "human",
     featureType: "", observedCue: "", regionDescription: "", appropriateness: "unreviewed",
-    humanRisk: null, humanReason: "" };
+    humanRisk: null, humanReason: "", reasonNeedsConfirmation: false };
 }
 
 export function applyAnalysis(record: DiscoveryRecord, analysis: Analysis): DiscoveryRecord {
@@ -137,7 +138,7 @@ export function applyAnalysis(record: DiscoveryRecord, analysis: Analysis): Disc
         cueId: crypto.randomUUID(), modelCandidateIndex: index, source: "model",
         featureType: candidate.featureType, observedCue: candidate.observedCue,
         regionDescription: candidate.regionDescription, appropriateness: "unreviewed",
-        humanRisk: null, humanReason: "",
+        humanRisk: null, humanReason: "", reasonNeedsConfirmation: false,
       })),
       ...record.humanReviews.filter((review) => review.source === "human"),
     ] };

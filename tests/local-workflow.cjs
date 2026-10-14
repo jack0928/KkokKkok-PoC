@@ -68,11 +68,23 @@ async function run() {
   assert(!discovery.discoveryRecordSchema.safeParse({...current,humanReviews:[...reviewing.humanReviews,blank],reviewCompletedAt:new Date().toISOString()}).success);
   assert(discovery.isReviewWritten({...reviewing.humanReviews[0],appropriateness:"inappropriate",humanRisk:null}));
   assert(!discovery.isReviewWritten({...reviewing.humanReviews[0],appropriateness:"appropriate",humanRisk:null}));
-  const final = records.persistRecord({...reviewing,reviewCompletedAt:new Date().toISOString()},current.updatedAt).find(item=>item.recordId===current.recordId);
+  let final = records.persistRecord({...reviewing,reviewCompletedAt:new Date().toISOString()},current.updatedAt).find(item=>item.recordId===current.recordId);
   assert.equal(discovery.reviewStatus(final),"completed");
   assert.equal(final.humanReviews[0].humanRisk,null);
   assert.throws(()=>records.persistRecord({...final,analysis:{...final.analysis,rawOutputText:"changed"}},final.updatedAt),records.RecordConflict);
   assert.throws(()=>records.persistRecord(final,current.updatedAt),records.RecordConflict);
+  assert(!discovery.isReviewWritten({...final.humanReviews[0],reasonNeedsConfirmation:true}));
+  const recordsRoute=require("../src/app/api/discovery-records/route.ts");
+  const apiHeaders={host:"127.0.0.1:3000",origin:"http://127.0.0.1:3000","content-type":"application/json"};
+  const summaryResponse=await recordsRoute.GET(new Request("http://localhost:3000/api/discovery-records?view=summary",{headers:apiHeaders}));
+  const summaryBody=await summaryResponse.json();
+  assert(Array.isArray(summaryBody.summaries));
+  assert(!JSON.stringify(summaryBody).includes("rawOutputText"));
+  assert(!JSON.stringify(summaryBody).includes("base64"));
+  const saveResponse=await recordsRoute.POST(new Request("http://localhost:3000/api/discovery-records",{method:"POST",headers:apiHeaders,body:JSON.stringify({action:"save",record:final,expectedUpdatedAt:final.updatedAt})}));
+  assert.equal(saveResponse.status,200);
+  const saveBody=await saveResponse.json();assert(saveBody.record);assert(!saveBody.records);
+  final=saveBody.record;
   const original = await images.GET(new Request("http://localhost:3000", {headers:{host:"127.0.0.1:3000",origin:"http://127.0.0.1:3000"}}), {params:Promise.resolve({id:complete.recordId})});
   assert.equal(original.status,200);
   assert.deepEqual(Buffer.from(await original.arrayBuffer()),bytes);
@@ -125,7 +137,22 @@ async function run() {
   assert.equal(pending[1].version,new Date(Date.parse(current.updatedAt)+1).toISOString());
   pending[1].resolve({...pending[1].snapshot,updatedAt:new Date(Date.parse(current.updatedAt)+2).toISOString()});
   assert(await secondSave); assert(!queue.dirty); assert.equal(queue.current.notes,"second edit during save");
-  console.log("PASS: upload consent, private originals, EXIF stripping, sequential queue, partial failure/retry, restart recovery, legacy attach, review status/completion, model immutability, optimistic conflict, local access and file deletion. Mock VLM only.");
+  queue.update({...queue.current,notes:"third edit before finishing"});
+  const thirdSave=queue.save(); await Promise.resolve();
+  queue.update({...queue.current,notes:"last edit while finishing waits"});
+  const finishing=queue.save(true);
+  pending[2].resolve({...pending[2].snapshot,updatedAt:new Date(Date.parse(current.updatedAt)+3).toISOString()});
+  assert(await thirdSave);
+  for(let turn=0;turn<10&&pending.length<4;turn++) await Promise.resolve();
+  assert.equal(pending.length,4);
+  assert.equal(pending[3].snapshot.notes,"last edit while finishing waits");
+  assert(pending[3].snapshot.reviewCompletedAt);
+  pending[3].resolve({...pending[3].snapshot,updatedAt:new Date(Date.parse(current.updatedAt)+4).toISOString()});
+  assert(await finishing);assert(!queue.dirty);assert(queue.current.reviewCompletedAt);
+  const failedQueue=new ReviewSaveQueue(current,async()=>{throw new Error("synthetic save failure");},()=>{});
+  failedQueue.update({...current,notes:"unsaved changes"});
+  assert.equal(await failedQueue.save(true),false);assert(failedQueue.dirty);assert.equal(failedQueue.current.notes,"unsaved changes");
+  console.log("PASS: upload consent, private originals, EXIF stripping, sequential queue, partial failure/retry, restart recovery, legacy attach, review status/completion, model immutability, optimistic conflict, local access and file deletion. Deletion rollback, lean APIs and concurrent editing/completion also verified. Mock VLM only.");
 }
 
 run().catch(error=>{console.error(error);process.exitCode=1;}).finally(()=>fs.rmSync(root,{recursive:true,force:true}));
