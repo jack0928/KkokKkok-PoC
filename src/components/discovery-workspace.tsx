@@ -1,222 +1,90 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Analysis, analysisSchema, applyAnalysis, DiscoveryRecord, HumanReview, MAX_IMAGE_BYTES, newHumanCue, newRecord, preparedImageSchema } from "@/lib/discovery";
-import { deleteRecord, exportRecords, migrateBrowserRecords, readBrowserRecords, readRecords, saveRecord } from "@/lib/storage";
-import { CueReview, FeatureTypeSuggestions } from "./cue-review";
-import { ImageUpload } from "./image-upload";
-import { ReviewGuide } from "./review-guide";
+import { useEffect, useRef, useState } from "react";
+import { MAX_IMAGE_BYTES, DiscoveryRecord, JobInfo } from "@/lib/discovery";
+import { readResults } from "@/lib/storage";
+import { UploadPreview } from "./upload-preview";
 
-async function responseJson(response: Response) {
-  let body;
-  try { body = await response.json(); } catch { throw new Error("서버 응답을 읽을 수 없습니다. 서버 상태를 확인해 주세요."); }
-  if (!response.ok) throw new Error(typeof body.error === "string" ? body.error : "요청에 실패했습니다.");
-  return body;
-}
-
-function friendlyError(error: unknown): string {
-  if (error instanceof Error && error.name === "QuotaExceededError") return "브라우저 저장 공간이 부족합니다. JSON Export 후 오래된 기록을 삭제해 주세요.";
-  return error instanceof Error ? error.message : "작업을 완료하지 못했습니다.";
-}
+const labels: Record<JobInfo["status"], string> = { queued: "분석 대기", analyzing: "분석 중", completed: "분석 완료 · 검토 가능", failed: "분석 실패", legacy: "기존 기록" };
 
 export function DiscoveryWorkspace() {
-  const [record, setRecord] = useState<DiscoveryRecord | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
-  const [thumbnail, setThumbnail] = useState<string | null>(null);
-  const [saveFailed, setSaveFailed] = useState(false);
-  const [testStarted, setTestStarted] = useState(false);
-  const [records, setRecords] = useState<DiscoveryRecord[]>([]);
-  const [ready, setReady] = useState(false);
-  const [browserRecords, setBrowserRecords] = useState<DiscoveryRecord[]>([]);
-  const [busy, setBusy] = useState<"prepare" | "analyze" | "save" | "delete" | "migrate" | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [consent, setConsent] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [records, setRecords] = useState<DiscoveryRecord[]>([]);
+  const [jobs, setJobs] = useState<Record<string, JobInfo>>({});
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [dirty, setDirty] = useState(false);
-  const activeRequest = useRef<AbortController | null>(null);
+  const [failedFiles, setFailedFiles] = useState<File[]>([]);
+  const uploadIds = useRef(new WeakMap<File, string>());
 
   useEffect(() => {
     let cancelled = false;
-    async function load() {
+    let timer: ReturnType<typeof setTimeout>;
+    async function refresh() {
       try {
-        const saved = await readRecords();
-        if (!cancelled) {
-          setRecords(saved);
-
-        }
-      } catch (error) {
-        if (!cancelled) setError(`로컬 DB 기록을 읽지 못했습니다. ${friendlyError(error)}`);
-      } finally { if (!cancelled) setReady(true); }
-      if (cancelled) return;
-      try { setBrowserRecords(readBrowserRecords()); }
-      catch (error) { setError((previous) => [previous, friendlyError(error)].filter(Boolean).join(" ")); }
+        const data = await readResults();
+        if (!cancelled) { setRecords(data.records); setJobs(data.jobs); }
+      } catch { if (!cancelled) setError("진행 상태를 읽지 못했습니다. 서버와 DB 설정을 확인해 주세요."); }
+      if (!cancelled) timer = setTimeout(refresh, 2000);
     }
-    void load();
-    return () => { cancelled = true; activeRequest.current?.abort(); };
+    void refresh();
+    return () => { cancelled = true; clearTimeout(timer); };
   }, []);
 
-  useEffect(() => {
-    if (!dirty) return;
-    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); };
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [dirty]);
-
-  function changeRecord(next: DiscoveryRecord) { setSaveFailed(false); setRecord({ ...next, updatedAt: new Date().toISOString() }); setDirty(true); setNotice(""); }
-  function mayLeave() { return !dirty || window.confirm("저장하지 않은 변경이 있습니다. 계속하면 현재 변경을 잃습니다. 로컬 DB 저장 또는 JSON Export 후 진행할 수 있습니다. 계속할까요?"); }
-
-  async function selectImage(file: File) {
-    if (busy) return;
-    setError(""); setNotice("");
-    if (!file.size || file.size > MAX_IMAGE_BYTES) { setError("1 byte ~ 10 MB 이미지를 선택해 주세요."); return; }
-    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) { setError("JPEG, PNG, WebP 정지 이미지만 사용할 수 있습니다."); return; }
-    const controller = new AbortController(); activeRequest.current = controller;
-    setBusy("prepare");
-    try {
-      const response = await fetch("/api/prepare-image", { method: "POST", headers: { "Content-Type": file.type }, body: file, signal: controller.signal });
-      const prepared = preparedImageSchema.parse(await responseJson(response));
-      if (record) {
-        if (record.image.originalSha256 !== prepared.image.originalSha256 || record.image.analysisSha256 !== prepared.image.analysisSha256) {
-          throw new Error("저장 기록과 다른 이미지입니다. 같은 원본을 선택하거나 ‘새 실험’을 시작해 주세요.");
-        }
-        setPreview(prepared.dataUrl); setThumbnail(prepared.thumbnailDataUrl ?? null); setDirty(testStarted); setSaveFailed(false); setNotice("같은 분석 이미지를 연결했습니다.");
-      } else {
-        setRecord(newRecord(prepared.image)); setPreview(prepared.dataUrl); setThumbnail(prepared.thumbnailDataUrl ?? null); setDirty(false); setSaveFailed(false);
-      }
-      setConsent(false);
-    } catch (error) { if (!controller.signal.aborted) setError(friendlyError(error)); }
-    finally { if (!controller.signal.aborted) setBusy(null); activeRequest.current = null; }
+  function select(input: FileList | null) {
+    if (!input) return;
+    const selected = Array.from(input);
+    if (selected.length > 20) { setError("한 번에 최대 20장을 선택해 주세요."); return; }
+    if (selected.some((file) => !["image/jpeg", "image/png", "image/webp"].includes(file.type) || !file.size || file.size > MAX_IMAGE_BYTES)) {
+      setError("각 이미지가 JPEG·PNG·WebP 형식이며 10 MB 이하인지 확인해 주세요."); return;
+    }
+    for (const file of selected) uploadIds.current.set(file, crypto.randomUUID());
+    setFiles(selected); setFailedFiles([]); setConsent(false); setError(""); setNotice("");
   }
 
-  async function analyze() {
-    if (!record || !preview || !consent || busy || record.analysis) return;
-    setTestStarted(true); setDirty(true); setSaveFailed(false);
-    setBusy("analyze"); setError(""); setNotice("");
-    const controller = new AbortController(); activeRequest.current = controller;
-    try {
-      // Start persistence only when the user actually runs this experiment.
-      // Save the small preview before the VLM call so a failed analysis remains
-      // distinguishable from an image that was merely selected.
+  async function submit() {
+    if (!files.length || !consent || uploading) return;
+    setUploading(true); setError(""); setNotice("");
+    const failed: File[] = [];
+    let registered = 0;
+    for (const file of files) {
       try {
-        const saved = await saveRecord(record, records.find((item) => item.recordId === record.recordId)?.updatedAt ?? null, thumbnail);
-        setRecords(saved); setRecord(saved.find((item) => item.recordId === record.recordId) ?? record); setDirty(false);
-      } catch (error) { setSaveFailed(true); throw error; }
-      const response = await fetch("/api/feature-discovery", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image: record.image, dataUrl: preview }), signal: controller.signal });
-      const analysis: Analysis = analysisSchema.parse(await responseJson(response));
-      changeRecord(applyAnalysis(record, analysis));
-      setNotice("VLM 후보를 받았습니다. 사람의 위험도는 아직 미검토입니다.");
-    } catch (error) { if (!controller.signal.aborted) setError(friendlyError(error)); }
-    finally { if (!controller.signal.aborted) setBusy(null); activeRequest.current = null; }
+        const response = await fetch("/api/analysis-jobs", { method: "POST", headers: { "Content-Type": file.type, "X-Analysis-Consent": "true", "X-Upload-ID": uploadIds.current.get(file)! }, body: file });
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error || "등록 실패");
+        registered++;
+      } catch { failed.push(file); }
+    }
+    setFiles(failed); setFailedFiles(failed); setUploading(false);
+    setNotice(`${registered}장을 분석 대기에 등록했습니다. 등록된 이미지는 페이지를 닫아도 로컬 작업 프로세스가 순차 분석합니다.`);
+    if (failed.length) setError(`${failed.length}장을 등록하지 못했습니다. 아래 파일을 확인하고 등록을 다시 시도해 주세요.`);
   }
 
-  function updateReview(cueId: string, patch: Partial<HumanReview>) {
-    if (!record) return;
-    changeRecord({ ...record, humanReviews: record.humanReviews.map((review) => review.cueId === cueId ? { ...review, ...patch } : review) });
-  }
-
-  const save = useCallback(async () => {
-    if (!record || busy || !ready || !testStarted) return;
-    setBusy("save"); setSaveFailed(false);
+  async function retry(id: string) {
+    if (!window.confirm("분석을 다시 요청하면 API 비용이 발생할 수 있습니다. 재시도할까요?")) return;
     try {
-      const saved = await saveRecord(record, records.find((item) => item.recordId === record.recordId)?.updatedAt ?? null, thumbnail);
-      setRecords(saved); setRecord(saved.find((item) => item.recordId === record.recordId) ?? record);
-      setDirty(false); setError(""); setNotice("로컬 DB에 저장했습니다. 공유·장기 보존은 JSON Export를 이용해 주세요.");
-    } catch (error) { setSaveFailed(true); setError(`자동 저장하지 못했습니다. ${friendlyError(error)}`); }
-    finally { setBusy(null); }
-  }, [record, records, busy, ready, thumbnail, testStarted]);
-
-  useEffect(() => {
-    if (!testStarted || !dirty || !record || !ready || busy || saveFailed) return;
-    const timer = window.setTimeout(() => { void save(); }, 1000);
-    return () => window.clearTimeout(timer);
-  }, [testStarted, dirty, record, ready, busy, saveFailed, save]);
-
-  function download(items: DiscoveryRecord[]) {
-    try { exportRecords(items); setError(""); setNotice("JSON 다운로드를 요청했습니다. 파일에는 이미지가 없지만 관찰 내용에 개인정보가 있을 수 있습니다."); }
-    catch { setError("Export할 기록의 형식을 확인해 주세요."); }
+      const response = await fetch(`/api/analysis-jobs?action=retry&record=${id}`, { method: "POST" });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error);
+      setNotice("재시도를 요청했습니다."); setError("");
+    } catch (error) { setError(error instanceof Error ? error.message : "재시도에 실패했습니다."); }
   }
 
-  const reviewed = record?.humanReviews.filter((r) => r.appropriateness !== "unreviewed" && r.humanRisk !== null && r.humanReason.trim()).length ?? 0;
-
-  return (
-    <>
-      <div className="page-heading"><div><h1>Feature Discovery 테스트</h1><p>Experiment 1 · 이미지 분석 → 후보 검토 → 결과 저장</p></div><button type="button" className="button secondary" disabled={!!busy} onClick={() => { if (!mayLeave()) return; setTestStarted(false); setRecord(null); setPreview(null); setThumbnail(null); setSaveFailed(false); setConsent(false); setDirty(false); setError(""); setNotice(""); }}>새 실험 <span aria-hidden="true">＋</span></button></div>
-      <section className="discovery-guide" aria-label="Feature Discovery 가이드">
-        <div className="guide-purpose">
-          <div><h2>왜 하나요?</h2><p>사진 속 어떤 요소를 위치 단서로 정의할지 탐색합니다. VLM과 사람의 판단 차이, 놓친 단서와 불필요한 후보를 확인합니다.</p></div>
-          <div><h2>결과는 어디에 쓰나요?</h2><p>저장·Export한 후보와 검토 이유를 사람이 모아 살펴보고, Feature 분류와 위험도 판단 기준을 정리합니다. 이 기준은 추후 Detection Evaluation에 사용하며, 평가에는 별도의 이미지를 씁니다.</p></div>
-        </div>
-        <details className="guide-method">
-          <summary>테스트 방법 보기</summary>
-          <ol>
-            <li>사용 권한이 있는 JPEG·PNG·WebP 이미지(최대 10 MB)를 선택하고 Preview를 확인합니다.</li>
-            <li>외부 전송에 동의한 뒤 ‘VLM으로 후보 탐색’을 누릅니다. 이때 이미지가 OpenAI로 전송되고 API 비용이 발생합니다.</li>
-            <li>후보마다 분류·관찰 내용·영역을 확인하고, 적절성·사람의 위험도·판단 이유를 작성합니다. 위험도는 외부 정보와 결합했을 때 위치 식별에 얼마나 유용한지를 기준으로 판단합니다.</li>
-            <li>놓친 Feature를 직접 추가하고, 애매한 기준이나 의문점은 실험 메모에 남깁니다. 판단하기 어려운 항목은 ‘판단 보류’로 기록합니다.</li>
-            <li>후보 탐색을 실행한 기록부터 분석·검토 변경이 로컬 DB에 자동 저장됩니다. 저장 완료를 확인하고, 공유·장기 보존할 결과는 JSON Export합니다. 결과 확인용 작은 미리보기만 DB에 저장됩니다. 원본은 비공개로 따로 관리합니다.</li>
-          </ol>
-          <p>모델 원본과 사람의 검토는 따로 보존합니다. 결과는 확정된 정답이나 탐지 성능 점수가 아니며, 다시 분석하려면 ‘새 실험’을 시작하세요.</p>
-        </details>
-      </section>
-      <div className="research-banner"><strong>VLM 결과 ≠ Ground Truth</strong><span>AI의 제안은 Feature 후보를 탐색하기 위한 참고 자료입니다. 최종 판단은 사람이 합니다.</span></div>
-      <ol className="steps" aria-label="실험 순서"><li className={!record ? "current" : "done"}><span>01</span> 이미지 준비</li><li className={record && !record.analysis ? "current" : record?.analysis ? "done" : ""}><span>02</span> VLM 후보 탐색</li><li className={record?.analysis ? "current" : ""}><span>03</span> 사람 검토·추가</li><li><span>04</span> 저장·Export</li></ol>
-      <div aria-live="polite">{error && <p className="message error" role="alert">{error}</p>}{notice && <p className="message success">{notice}</p>}{busy && <p className="message loading" role="status">{busy === "prepare" ? "이미지를 준비하고 있습니다…" : busy === "analyze" ? "VLM이 Feature 후보를 탐색하고 있습니다. 최대 약 90초가 걸릴 수 있습니다…" : "로컬 DB 작업을 진행하고 있습니다…"}</p>}</div>
-
-      <div className="workspace-grid">
-        <aside className="image-column">
-          <section className="panel"><div className="panel-heading"><h2>테스트 이미지</h2><span className="eyebrow">INPUT</span></div>
-            <p className="caption">이미지 선택만으로는 저장하지 않습니다. 후보 탐색 실행 후 결과와 최대 480px JPEG 미리보기를 로컬 DB에 자동 저장합니다. 원본·분석본은 저장하지 않습니다.</p>
-            <ImageUpload preview={preview} disabled={!!busy} attachedRecord={!!record} dimensions={record ? `${record.image.width} × ${record.image.height}` : undefined} onSelect={selectImage} />
-            {record && <div className="image-meta"><span>IMAGE ID</span><code>{record.image.imageId.slice(0, 8)}</code><span className="subtle">원본·분석 이미지 hash 기록</span></div>}
-            {!record?.analysis && <><div className="privacy-note"><strong>외부 API 전송 안내</strong><p>분석 버튼을 누르면 이 이미지가 OpenAI로 전송되며 API 비용이 발생합니다. 서버에 원본·분석본을 저장하지 않지만 OpenAI의 별도 데이터 보존 정책이 적용됩니다.</p><label className="checkbox-label"><input type="checkbox" disabled={!!busy || !record} checked={consent} onChange={(e) => setConsent(e.target.checked)} />내가 사용할 권한이 있는 이미지이며, 외부 전송에 동의합니다.</label></div><button type="button" className="button primary wide" onClick={analyze} disabled={!record || !preview || !consent || !!busy}>VLM으로 후보 탐색 <span aria-hidden="true">↗</span></button></>}
-            {record?.analysis && <div className="analysis-info"><span className="pill green">분석 완료</span><p>{record.analysis.responseModel}</p><p className="caption">한 기록의 모델 원본은 덮어쓰지 않습니다. 재분석은 새 실험으로 진행하세요.</p></div>}
-          </section>
-          <ReviewGuide />
-        </aside>
-
-        <section className="review-column" aria-label="Feature 후보 검토">
-          <div className="review-heading"><div><h2>Feature 후보 & Human Review <span className="count">{record?.humanReviews.length ?? 0}</span></h2><p>모델 원본은 보존하고, 사람의 검토는 별도로 기록합니다.</p></div>{record && <span className="pill">검토 작성 {reviewed} / {record.humanReviews.length}</span>}</div>
-          <FeatureTypeSuggestions />
-          {!record?.analysis && <div className="empty-state"><h3>{record ? "분석을 시작해 후보를 발견하세요" : "첫 번째 이미지로 탐색을 시작하세요"}</h3><p>텍스트, 로고, 건물, 교통시설, 환경 단서…<br />분류는 잠정적인 예시이며 직접 새 Feature type을 입력할 수 있습니다.</p></div>}
-          {record?.analysis && record.analysis.modelOutput.candidates.length === 0 && <div className="empty-state compact"><h3>VLM이 제안한 후보가 없습니다.</h3><p>위험이 없다는 뜻은 아닙니다. 이미지를 직접 검토하고 놓친 Feature를 추가해 주세요.</p></div>}
-          {record?.analysis && record.analysis.modelOutput.limitations.length > 0 && <details className="limitations"><summary>VLM의 관찰 한계 보기</summary><ul>{record.analysis.modelOutput.limitations.map((item, i) => <li key={i}>{item}</li>)}</ul></details>}
-          {record?.humanReviews.map((review, index) => <CueReview key={review.cueId} review={review} candidate={review.modelCandidateIndex === null ? undefined : record.analysis?.modelOutput.candidates[review.modelCandidateIndex]} number={index + 1} disabled={!!busy} onChange={(patch) => updateReview(review.cueId, patch)} onRemove={() => changeRecord({ ...record, humanReviews: record.humanReviews.filter((r) => r.cueId !== review.cueId) })} />)}
-          {record && <><button type="button" className="add-cue" disabled={!!busy || record.humanReviews.length >= 100} onClick={() => changeRecord({ ...record, humanReviews: [...record.humanReviews, newHumanCue()] })}><span aria-hidden="true">＋</span> VLM이 놓친 Feature 직접 추가</button><label className="notes-label" htmlFor="experiment-notes">실험 메모<textarea id="experiment-notes" maxLength={5000} rows={3} disabled={!!busy} value={record.notes} placeholder="분류 기준, 의문점, 후속 검토 사항을 적어 주세요" onChange={(e) => changeRecord({ ...record, notes: e.target.value })} /></label></>}
-          <div className="save-bar"><span className="subtle">{busy === "save" ? "로컬 DB 저장 중…" : saveFailed ? "자동 저장 실패 · 재시도 또는 JSON Export해 주세요" : !testStarted && record ? "분석 전 · 아직 DB에 저장하지 않았습니다" : dirty ? "변경 사항 자동 저장 대기 중…" : record ? "로컬 DB에 저장됨" : "결과와 작은 이미지 미리보기는 로컬 DB에 자동 저장됩니다"}</span><div><button type="button" className="button secondary" disabled={!record || !!busy} onClick={() => record && download([record])}>JSON Export <span aria-hidden="true">↓</span></button><button type="button" className="button primary" disabled={!record || !!busy || !ready || !dirty || !testStarted} onClick={save}>{saveFailed ? "저장 재시도" : "지금 저장"}</button></div></div>
-        </section>
-      </div>
-
-      {browserRecords.length > 0 && <section className="panel legacy-records" aria-label="기존 브라우저 기록">
-        <div className="panel-heading"><h2>기존 브라우저 기록 {browserRecords.length}개</h2></div>
-        <p className="caption">이전에 저장한 기록을 로컬 DB에 옮길 수 있습니다. 기존 브라우저 기록은 그대로 남으며, 같은 ID의 다른 DB 기록은 덮어쓰지 않습니다.</p>
-        <div className="legacy-actions">
-          <button type="button" className="button secondary" disabled={!!busy} onClick={() => download(browserRecords)}>기존 기록 JSON Export</button>
-          <button type="button" className="button secondary" disabled={!!busy || !ready} onClick={async () => {
-            setBusy("migrate");
-            try {
-              setRecords(await migrateBrowserRecords(browserRecords));
-              setBrowserRecords([]); setError(""); setNotice("기존 브라우저 기록을 로컬 DB에 옮겼습니다. 브라우저 원본도 유지했습니다.");
-            } catch (error) { setError(friendlyError(error)); }
-            finally { setBusy(null); }
-          }}>로컬 DB로 옮기기</button>
-        </div>
-      </section>}
-
-      <section className="saved-section"><div className="panel-heading"><div><div className="eyebrow">LOCAL RECORDS</div><h2>저장된 실험 <span className="count">{records.length}</span></h2></div><div className="record-actions"><Link className="button secondary small" href="/results" onClick={(event) => { if (busy || !mayLeave()) event.preventDefault(); }}>결과 모아보기</Link><button type="button" className="button secondary small" disabled={!records.length || !!busy} onClick={() => download(records)}>저장 기록 전체 Export ↓</button></div></div><p className="caption">최대 480px의 이미지 미리보기를 결과와 함께 저장합니다. 기록을 열면 분석용 Preview를 위해 같은 원본을 다시 연결할 수 있습니다. 기록은 이 컴퓨터의 로컬 DB에 보관됩니다. 공유·백업을 위해 JSON을 따로 보존하세요. 관찰 내용도 민감정보일 수 있습니다.</p>
-        {!records.length && <p className="saved-empty">{ready ? "아직 저장된 실험이 없습니다." : "저장 기록을 확인하고 있습니다…"}</p>}
-        <div className="saved-list">{records.map((saved) => <article key={saved.recordId} className="saved-record"><div><strong>이미지 {saved.image.imageId.slice(0, 8)}</strong><p>{new Date(saved.updatedAt).toLocaleString("ko-KR")} · Feature {saved.humanReviews.length}개 · {saved.analysis ? "분석 완료" : "분석 전"}</p></div><div><button type="button" className="button secondary small" disabled={!!busy} onClick={() => { if (!mayLeave()) return; setTestStarted(true); setRecord(saved); setPreview(null); setThumbnail(null); setSaveFailed(false); setConsent(false); setDirty(false); setError(""); setNotice("기록을 열었습니다. Preview가 필요하면 같은 원본 이미지를 다시 연결해 주세요."); }}>열기</button><button type="button" className="button ghost small" disabled={!!busy} onClick={async () => {
-              if (busy || !window.confirm("로컬 DB에서 해당 기록을 삭제할까요? 기존 브라우저 기록과 Export한 파일은 별도로 남습니다.")) return;
-              setBusy("delete");
-              try {
-                setRecords(await deleteRecord(saved.recordId, saved.updatedAt));
-                if (record?.recordId === saved.recordId) { setTestStarted(false); setRecord(null); setPreview(null); setThumbnail(null); setSaveFailed(false); setDirty(false); setConsent(false); }
-                setNotice("로컬 DB 기록을 삭제했습니다."); setError("");
-              } catch (error) { setError(friendlyError(error)); }
-              finally { setBusy(null); }
-            }}>삭제</button></div></article>)}</div>
-      </section>
-    </>
-  );
+  return <>
+    <div className="page-heading"><div><h1>Feature Discovery · 이미지 분석</h1><p>여러 장을 먼저 분석하고, 사람 검토 페이지에서 하나씩 피드백합니다.</p></div><Link className="button secondary" href="/results">결과·검토 목록</Link></div>
+    <section className="discovery-guide"><h2>이 테스트의 목적</h2><p>AI의 후보와 사람의 검토를 비교해 유의미한 위치 단서와 판단 기준을 정리합니다. AI의 제안은 정답이 아니며 실제 촬영 위치는 추론하지 않습니다.</p></section>
+    <section className="panel">
+      <div className="panel-heading"><h2>분석할 이미지 선택</h2><span className="subtle">최대 20장 · 장당 10 MB</span></div>
+      <label>JPEG·PNG·WebP 이미지<input type="file" multiple accept="image/jpeg,image/png,image/webp" disabled={uploading} onChange={(event) => { select(event.target.files); event.target.value = ""; }} /></label>
+      <p className="caption">선택만으로는 저장하거나 분석하지 않습니다. 요청 시 원본과 메타데이터를 제거한 분석본을 비공개 로컬 폴더에 보관합니다. AI에는 분석본만 전송합니다.</p>
+      {!!files.length && <ul className="upload-files">{files.map((file, index) => <li key={`${file.name}-${file.lastModified}-${index}`}><UploadPreview file={file} /><div>{file.name} · {(file.size / 1024 / 1024).toFixed(1)} MB <button type="button" className="button ghost small" disabled={uploading} onClick={() => setFiles((current) => current.filter((_, position) => index !== position))}>선택 취소</button></div></li>)}</ul>}
+      <label className="checkbox-label"><input type="checkbox" checked={consent} disabled={uploading} onChange={(event) => setConsent(event.target.checked)} />사용 권한이 있는 이미지이며, 원본의 로컬 보관과 OpenAI 전송·API 비용 발생에 동의합니다.</label>
+      <button type="button" className="button primary" disabled={uploading || !consent || !files.length} onClick={submit}>{uploading ? "이미지 등록 중…" : failedFiles.length ? "등록 실패 이미지 다시 요청" : `선택 이미지 ${files.length}장 분석 시작`}</button>
+      <p className="caption">로컬 서버와 작업 프로세스가 켜져 있어야 합니다. 업로드가 끝날 때까지는 페이지를 열어두세요. 실패한 분석은 자동 재시도하지 않습니다.</p>
+    </section>
+    <div className="messages" aria-live="polite">{error && <p role="alert" className="message error">{error}</p>}{notice && <p className="message success">{notice}</p>}</div>
+    <section className="saved-section"><div className="panel-heading"><h2>분석 진행 상황</h2></div><div className="saved-list">{records.map((record) => <article className="saved-record" key={record.recordId}><div><strong>이미지 {record.image.imageId.slice(0, 8)}</strong><p>{record.analysis ? "분석 완료 · 검토 가능" : labels[jobs[record.recordId]?.status ?? "legacy"]}</p>{jobs[record.recordId]?.error && <p>{jobs[record.recordId].error}</p>}</div>{record.analysis ? <Link className="button secondary small" href={`/review/${record.recordId}`}>사람 검토</Link> : jobs[record.recordId]?.status === "failed" && jobs[record.recordId]?.hasOriginal ? <button className="button secondary small" onClick={() => retry(record.recordId)}>분석 재시도</button> : null}</article>)}</div>{!records.length && <p className="caption">등록된 분석이 없습니다.</p>}</section>
+  </>;
 }

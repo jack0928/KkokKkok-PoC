@@ -43,3 +43,6 @@ kkokkkok-discovery-*.json
 *.tmp
 *.swp
 ~$*
+
+*.worker.lock
+*.original

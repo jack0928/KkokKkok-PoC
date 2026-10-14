@@ -77,7 +77,11 @@ export const discoveryRecordSchema = z.object({
   analysis: analysisSchema.nullable(),
   humanReviews: z.array(humanReviewSchema).max(100),
   notes: z.string().max(5000),
+  reviewCompletedAt: z.string().datetime().nullable().default(null),
 }).strict().superRefine((record, context) => {
+  if (record.reviewCompletedAt && (!record.analysis || record.humanReviews.some((item) => item.appropriateness === "unreviewed" || !item.humanReason.trim() || (item.humanRisk === null && item.appropriateness !== "uncertain")))) {
+    context.addIssue({ code: "custom", message: "Completed review requires an analysis and reviewed cues" });
+  }
   const indexes = new Set<number>();
   const ids = new Set<string>();
   for (const review of record.humanReviews) {
@@ -100,18 +104,22 @@ export const discoveryRecordSchema = z.object({
   }
 });
 
-export const storedRecordsSchema = z.array(discoveryRecordSchema).max(100);
+export const storedRecordsSchema = z.array(discoveryRecordSchema);
 export type DiscoveryRecord = z.infer<typeof discoveryRecordSchema>;
 export type HumanReview = z.infer<typeof humanReviewSchema>;
 export type ModelCandidate = z.infer<typeof modelOutputSchema>["candidates"][number];
 export type PreparedImage = z.infer<typeof preparedImageSchema>;
 export type Analysis = z.infer<typeof analysisSchema>;
 
+export function isReviewWritten(item: HumanReview): boolean {
+  return item.appropriateness !== "unreviewed" && !!item.humanReason.trim() && (item.humanRisk !== null || item.appropriateness === "uncertain");
+}
+
 export function newRecord(image: PreparedImage["image"]): DiscoveryRecord {
   const now = new Date().toISOString();
   return { schemaVersion: 1, experiment: "feature-discovery", recordId: crypto.randomUUID(),
     createdAt: now, updatedAt: now, riskDefinition: RISK_DEFINITION,
-    image, analysis: null, humanReviews: [], notes: "" };
+    image, analysis: null, humanReviews: [], notes: "", reviewCompletedAt: null };
 }
 
 export function newHumanCue(): HumanReview {
@@ -134,3 +142,25 @@ export function applyAnalysis(record: DiscoveryRecord, analysis: Analysis): Disc
       ...record.humanReviews.filter((review) => review.source === "human"),
     ] };
 }
+
+
+export function reviewStatus(record: DiscoveryRecord): "unreviewed" | "in_progress" | "completed" {
+  if (record.reviewCompletedAt) return "completed";
+  return record.notes.trim() || record.humanReviews.some((item) => {
+    const candidate = item.modelCandidateIndex === null ? undefined : record.analysis?.modelOutput.candidates[item.modelCandidateIndex];
+    return item.source === "human" || item.appropriateness !== "unreviewed" || item.humanRisk !== null || item.humanReason.trim()
+      || (candidate && (item.featureType !== candidate.featureType || item.observedCue !== candidate.observedCue || item.regionDescription !== candidate.regionDescription));
+  }) ? "in_progress" : "unreviewed";
+}
+
+export const jobInfoSchema = z.object({
+  status: z.enum(["queued", "analyzing", "completed", "failed", "legacy"]),
+  error: z.string().nullable(),
+  hasOriginal: z.boolean(),
+});
+export const resultsSchema = z.object({
+  records: storedRecordsSchema,
+  thumbnails: z.record(z.string().uuid(), z.string().startsWith("data:image/jpeg;base64,").max(200000)),
+  jobs: z.record(z.string().uuid(), jobInfoSchema).default({}),
+});
+export type JobInfo = z.infer<typeof jobInfoSchema>;

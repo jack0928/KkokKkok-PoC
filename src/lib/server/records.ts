@@ -1,5 +1,5 @@
 import "server-only";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { isDeepStrictEqual } from "node:util";
@@ -8,7 +8,7 @@ import { DiscoveryRecord, discoveryRecordSchema, storedRecordsSchema } from "../
 export class RecordConflict extends Error {}
 
 // Open lazily so build/prerender never creates an experiment database.
-function withDatabase<T>(operation: (db: DatabaseSync) => T): T {
+export function withDatabase<T>(operation: (db: DatabaseSync) => T): T {
   const path = resolve(process.env.SQLITE_PATH || "private-data/feature-discovery.sqlite");
   mkdirSync(dirname(path), { recursive: true });
   const db = new DatabaseSync(path);
@@ -23,21 +23,25 @@ function withDatabase<T>(operation: (db: DatabaseSync) => T): T {
     if (!db.prepare("PRAGMA table_info(discovery_records)").all().some((column) => column.name === "thumbnail")) {
       db.exec("ALTER TABLE discovery_records ADD COLUMN thumbnail BLOB");
     }
+    const columns = db.prepare("PRAGMA table_info(discovery_records)").all().map((column) => column.name);
+    for (const column of ["original_path", "analysis_path", "job_status", "job_error"]) {
+      if (!columns.includes(column)) db.exec(`ALTER TABLE discovery_records ADD COLUMN ${column} TEXT`);
+    }
     return operation(db);
   } finally { db.close(); }
 }
 
-function allRecords(db: DatabaseSync): DiscoveryRecord[] {
+export function allRecords(db: DatabaseSync): DiscoveryRecord[] {
   return storedRecordsSchema.parse(db.prepare("SELECT record_json FROM discovery_records ORDER BY updated_at DESC, record_id").all()
     .map((row) => JSON.parse(String(row.record_json))));
 }
 
-function findRecord(db: DatabaseSync, id: string): DiscoveryRecord | null {
+export function findRecord(db: DatabaseSync, id: string): DiscoveryRecord | null {
   const row = db.prepare("SELECT record_json FROM discovery_records WHERE record_id = ?").get(id);
   return row ? discoveryRecordSchema.parse(JSON.parse(String(row.record_json))) : null;
 }
 
-function transaction<T>(db: DatabaseSync, operation: () => T): T {
+export function transaction<T>(db: DatabaseSync, operation: () => T): T {
   db.exec("BEGIN IMMEDIATE");
   try { const result = operation(); db.exec("COMMIT"); return result; }
   catch (error) { db.exec("ROLLBACK"); throw error; }
@@ -46,7 +50,7 @@ function transaction<T>(db: DatabaseSync, operation: () => T): T {
 export function listRecords(): DiscoveryRecord[] { return withDatabase(allRecords); }
 
 export function listResults() {
-  return withDatabase((db) => ({ records: allRecords(db), thumbnails: Object.fromEntries(
+  return withDatabase((db) => ({ records: allRecords(db), jobs: Object.fromEntries(db.prepare("SELECT record_id, job_status, job_error, original_path FROM discovery_records").all().map((row) => [String(row.record_id), { status: row.job_status ?? "legacy", error: row.job_error ?? null, hasOriginal: !!row.original_path }])), thumbnails: Object.fromEntries(
     db.prepare("SELECT record_id, thumbnail FROM discovery_records WHERE thumbnail IS NOT NULL").all()
       .map((row) => [String(row.record_id), `data:image/jpeg;base64,${Buffer.from(row.thumbnail as Uint8Array).toString("base64")}`]),
   ) }));
@@ -55,6 +59,8 @@ export function listResults() {
 export function persistRecord(input: DiscoveryRecord, expectedUpdatedAt: string | null, thumbnail: Buffer | null = null): DiscoveryRecord[] {
   const record = discoveryRecordSchema.parse(input);
   return withDatabase((db) => transaction(db, () => {
+    const job = db.prepare("SELECT job_status FROM discovery_records WHERE record_id = ?").get(record.recordId);
+    if (job?.job_status === "queued" || job?.job_status === "analyzing") throw new RecordConflict("분석 완료 후 검토해 주세요.");
     const existing = findRecord(db, record.recordId);
     if ((existing?.updatedAt ?? null) !== expectedUpdatedAt) {
       throw new RecordConflict("다른 화면에서 기록이 변경되었거나 삭제되었습니다. 현재 내용을 JSON Export한 뒤 페이지를 새로고침해 주세요.");
@@ -74,8 +80,14 @@ export function persistRecord(input: DiscoveryRecord, expectedUpdatedAt: string 
 
 export function removeRecord(id: string, expectedUpdatedAt: string): DiscoveryRecord[] {
   return withDatabase((db) => transaction(db, () => {
+    const job = db.prepare("SELECT job_status FROM discovery_records WHERE record_id = ?").get(id);
+    if (job?.job_status === "analyzing") throw new RecordConflict("분석 중인 기록은 완료 후 삭제해 주세요.");
     const existing = findRecord(db, id);
     if (!existing || existing.updatedAt !== expectedUpdatedAt) throw new RecordConflict("기록이 변경되었거나 삭제되었습니다. 페이지를 새로고침해 주세요.");
+    const files = db.prepare("SELECT original_path, analysis_path FROM discovery_records WHERE record_id = ?").get(id);
+    for (const key of ["original_path", "analysis_path"]) {
+      if (typeof files?.[key] === "string") rmSync(files[key], { force: true });
+    }
     db.prepare("DELETE FROM discovery_records WHERE record_id = ?").run(id);
     return allRecords(db);
   }));

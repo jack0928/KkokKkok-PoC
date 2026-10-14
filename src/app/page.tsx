@@ -9,8 +9,8 @@ export default function Home() {
         <article className="test-option">
           <h2>1. Feature Discovery</h2>
           <p>이미지에서 위치 단서가 될 수 있는 Feature 후보를 탐색합니다. VLM의 제안을 사람이 검토하고, 놓친 단서를 직접 추가합니다.</p>
-          <p className="caption">이미지 준비 → VLM 후보 탐색 → Human Review → 결과 저장·JSON Export</p>
-          <Link className="button primary" href="/feature-discovery">Feature Discovery 열기</Link>
+          <p className="caption">여러 이미지 분석 → 별도 사람 검토 → 완료·결과 조회</p>
+          <Link className="button primary" href="/feature-discovery">이미지 분석 시작</Link>
         </article>
         <article className="test-option">
           <h2>2. Detection Evaluation · 추후 구현 예정</h2>

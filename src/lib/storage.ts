@@ -1,5 +1,4 @@
-import { DiscoveryRecord, discoveryRecordSchema, STORAGE_KEY, storedRecordsSchema } from "./discovery";
-import { z } from "zod";
+import { DiscoveryRecord, discoveryRecordSchema, STORAGE_KEY, storedRecordsSchema, resultsSchema } from "./discovery";
 
 async function recordsRequest(method: string, body?: unknown): Promise<DiscoveryRecord[]> {
   const response = await fetch("/api/discovery-records", {
@@ -22,7 +21,7 @@ export async function readResults() {
   const response = await fetch("/api/discovery-records?thumbnails=1", { cache: "no-store" });
   const json = await response.json();
   if (!response.ok) throw new Error("저장된 결과를 읽지 못했습니다.");
-  return z.object({ records: storedRecordsSchema, thumbnails: z.record(z.string().uuid(), z.string().startsWith("data:image/jpeg;base64,").max(200000)) }).parse(json);
+  return resultsSchema.parse(json);
 }
 
 export function deleteRecord(recordId: string, expectedUpdatedAt: string): Promise<DiscoveryRecord[]> {
