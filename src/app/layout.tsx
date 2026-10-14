@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import "./globals.css";
+import { Navigation } from "@/components/navigation";
 
 export const metadata: Metadata = {
   title: "꼭꼭 · Location Cue Lab",
@@ -15,7 +16,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <header className="site-header">
           <div className="header-inner">
             <Link className="brand" href="/" aria-label="꼭꼭 홈"><span>꼭꼭 <small>Location Cue Lab</small></span></Link>
-            <nav aria-label="주 메뉴"><Link href="/">홈</Link><Link href="/feature-discovery">Feature Discovery</Link><Link href="/detection-evaluation">Detection Evaluation</Link><Link href="/results">테스트 결과</Link></nav>
+            <Navigation />
           </div>
         </header>
         <main id="main" className="main-container">{children}</main>

@@ -19,4 +19,3 @@ export function checkRequest(request: Request) {
     throw new InputError("로컬 테스트 페이지에서만 기록에 접근할 수 있습니다.", 403);
   }
 }
-

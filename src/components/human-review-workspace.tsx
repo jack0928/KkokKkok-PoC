@@ -107,7 +107,7 @@ export function HumanReviewWorkspace({ recordId }: { recordId: string }) {
           <img className="review-image" src={thumbnail} alt="기존 저화질 미리보기" />
         )}<p className="caption">기존 기록에는 원본이 없습니다. 같은 원본을 연결하면 이후 다시 업로드할 필요가 없습니다.</p><label className="checkbox-label"><input type="checkbox" checked={attachConsent} onChange={(event) => setAttachConsent(event.target.checked)} />원본의 비공개 로컬 보관에 동의합니다.</label><input type="file" accept="image/jpeg,image/png,image/webp" disabled={!attachConsent || saving} onChange={(event) => { const file = event.target.files?.[0]; if (file) void attach(file); }} /></>}
       </section><ReviewGuide /></aside>
-      <section><div className="review-heading"><h2>이미지 {record.image.imageId.slice(0, 8)} · 후보 {record.humanReviews.length}개</h2><span>{record.reviewCompletedAt ? "검토 완료" : dirty ? "자동 저장 대기" : "저장됨"}</span></div>
+      <section><div className="review-heading"><h2>이미지 {record.image.imageId.slice(0, 8)} · 후보 {record.humanReviews.length}개</h2><span className={`status-badge status-${record.reviewCompletedAt ? "completed" : "in_progress"}`}>{record.reviewCompletedAt ? "검토 완료" : dirty ? "자동 저장 대기" : "검토 중"}</span></div>
         <FeatureTypeSuggestions />
         {record.analysis.modelOutput.candidates.length === 0 && <p className="message loading">모델 후보가 0개입니다. 위험이 없다는 뜻은 아닙니다. 원본을 검토하고 놓친 요소를 추가해 주세요.</p>}
         {record.analysis.modelOutput.limitations.length > 0 && <details className="limitations"><summary>모델 관찰 한계</summary><ul>{record.analysis.modelOutput.limitations.map((item, index) => <li key={index}>{item}</li>)}</ul></details>}

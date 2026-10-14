@@ -98,7 +98,7 @@ export function DiscoveryResults() {
             <div className="result-card-summary">
               <strong>이미지 {record.image.imageId.slice(0, 8)}</strong>
               <span className="result-date">{new Date(record.updatedAt).toLocaleString("ko-KR")}</span>
-              <p>{statusLabels[state(record)]} · Feature {record.humanReviews.length}개 · 검토 {reviewed}/{record.humanReviews.length}</p>
+              <p><span className={`status-badge status-${state(record)}`}>{statusLabels[state(record)]}</span></p><p>Feature {record.humanReviews.length}개 · 검토 {reviewed}/{record.humanReviews.length}</p>
               <p className="result-card-types">{[...new Set(record.humanReviews.map((item) => item.featureType).filter(Boolean))].slice(0, 4).join(" · ") || "작성된 Feature 없음"}</p>
               {record.analysis && <p className="result-card-model">{record.analysis.responseModel}</p>}
               <span className="result-card-toggle"><span className="when-closed">상세 보기</span><span className="when-open">상세 닫기</span></span>
@@ -110,7 +110,7 @@ export function DiscoveryResults() {
               {record.analysis && <Link className="button primary small" href={`/review/${record.recordId}`}>{reviewStatus(record) === "completed" ? "검토 확인·수정" : reviewStatus(record) === "in_progress" ? "검토 계속" : "사람 검토 시작"}</Link>}
               {!record.analysis && jobs[record.recordId]?.status === "failed" && jobs[record.recordId]?.hasOriginal && <button className="button secondary small" onClick={() => retry(record.recordId)}>분석 재시도</button>}
               {jobs[record.recordId]?.hasOriginal && <a className="button secondary small" href={`/api/discovery-images/${record.recordId}`} target="_blank" rel="noopener noreferrer">원본 보기</a>}
-              <button type="button" className="button secondary small" disabled={loading || !!deletingId} onClick={() => download([record])}>이 기록 JSON Export</button><button type="button" className="button secondary small" disabled={loading || !!deletingId || jobs[record.recordId]?.status === "analyzing"} onClick={() => remove(record)} aria-label={`이미지 ${record.image.imageId.slice(0, 8)} 결과 삭제`}>{deletingId === record.recordId ? "삭제 중…" : "결과 삭제"}</button></div>
+              <button type="button" className="button secondary small" disabled={loading || !!deletingId} onClick={() => download([record])}>이 기록 JSON Export</button><button type="button" className="button secondary small danger" disabled={loading || !!deletingId || jobs[record.recordId]?.status === "analyzing"} onClick={() => remove(record)} aria-label={`이미지 ${record.image.imageId.slice(0, 8)} 결과 삭제`}>{deletingId === record.recordId ? "삭제 중…" : "결과 삭제"}</button></div>
             <dl className="result-meta"><div><dt>실험 ID</dt><dd>{record.recordId}</dd></div><div><dt>이미지</dt><dd>{record.image.width} × {record.image.height} · {record.image.mimeType}</dd></div><div><dt>생성 / 저장</dt><dd>{new Date(record.createdAt).toLocaleString("ko-KR")} / {new Date(record.updatedAt).toLocaleString("ko-KR")}</dd></div>
               {record.analysis && <><div><dt>모델</dt><dd>{record.analysis.responseModel} (요청: {record.analysis.requestedModel})</dd></div><div><dt>분석 / 프롬프트</dt><dd>{new Date(record.analysis.analyzedAt).toLocaleString("ko-KR")} · {record.analysis.promptVersion}</dd></div><div><dt>토큰 사용량</dt><dd>{record.analysis.usage ? `입력 ${record.analysis.usage.inputTokens} / 출력 ${record.analysis.usage.outputTokens}` : "기록 없음"}</dd></div></>}
             </dl>
