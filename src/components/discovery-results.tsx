@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { DiscoveryRecord, RISK_DEFINITION } from "@/lib/discovery";
-import { exportRecords, readResults } from "@/lib/storage";
+import { deleteRecord, exportRecords, readResults } from "@/lib/storage";
 
 const appropriateness = { unreviewed: "미검토", appropriate: "적절", inappropriate: "부적절", uncertain: "판단 보류" };
 
@@ -13,6 +13,7 @@ export function DiscoveryResults() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -23,6 +24,7 @@ export function DiscoveryResults() {
   }, []);
 
   async function refresh() {
+    if (deletingId) return;
     setLoading(true); setError(""); setNotice("");
     try { const data = await readResults(); setRecords(data.records); setThumbnails(data.thumbnails); }
     catch { setError("저장된 결과를 읽지 못했습니다. 로컬 DB 설정을 확인해 주세요."); }
@@ -34,11 +36,24 @@ export function DiscoveryResults() {
     catch { setError("JSON Export에 실패했습니다."); }
   }
 
+  async function remove(record: DiscoveryRecord) {
+    if (loading || deletingId || !window.confirm("이 결과와 이미지 미리보기를 로컬 DB에서 삭제할까요? 삭제 후 복구할 수 없습니다. Export한 파일과 기존 브라우저 기록은 그대로 남습니다.")) return;
+    setDeletingId(record.recordId); setError(""); setNotice("");
+    try {
+      const remaining = await deleteRecord(record.recordId, record.updatedAt);
+      setRecords(remaining);
+      setThumbnails((current) => Object.fromEntries(Object.entries(current).filter(([id]) => remaining.some((item) => item.recordId === id))));
+      setNotice("결과와 이미지 미리보기를 삭제했습니다.");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "결과를 삭제하지 못했습니다. 다시 시도해 주세요.");
+    } finally { setDeletingId(null); }
+  }
+
   return (
     <>
       <div className="page-heading"><div><h1>테스트 결과</h1><p>로컬 DB에 저장한 Feature Discovery 결과를 확인합니다.</p></div><Link className="button secondary" href="/feature-discovery">새 테스트 진행</Link></div>
       <p className="results-note">VLM 후보와 Human Review는 별도 기록입니다. Risk Level: {RISK_DEFINITION}. 최대 480px 미리보기만 저장하며 원본·분석본과 Export JSON에는 이미지가 없습니다.</p>
-      <div className="results-toolbar"><span>저장된 실험 {records.length}개</span><div className="record-actions"><button type="button" className="button secondary small" disabled={loading} onClick={refresh}>새로고침</button><button type="button" className="button secondary small" disabled={loading || !records.length} onClick={() => download(records)}>전체 JSON Export</button></div></div>
+      <div className="results-toolbar"><span>저장된 실험 {records.length}개</span><div className="record-actions"><button type="button" className="button secondary small" disabled={loading || !!deletingId} onClick={refresh}>새로고침</button><button type="button" className="button secondary small" disabled={loading || !!deletingId || !records.length} onClick={() => download(records)}>전체 JSON Export</button></div></div>
       <div aria-live="polite">{loading && <p className="message loading">결과를 불러오고 있습니다…</p>}{error && <p className="message error" role="alert">{error}</p>}{notice && <p className="message success">{notice}</p>}</div>
       {!loading && !error && !records.length && <div className="empty-state"><h2>저장된 결과가 없습니다.</h2><p>Feature Discovery에서 테스트하면 결과가 자동 저장되어 이 페이지에서 확인할 수 있습니다.</p></div>}
       <div className="results-list">{records.map((record) => {
@@ -63,7 +78,7 @@ export function DiscoveryResults() {
           </summary>
           <div className="result-body">
             <p className="caption">결과 확인용 저화질 미리보기입니다. 세부 단서의 판독에는 원본을 사용하세요.</p>
-            <div className="record-actions"><button type="button" className="button secondary small" onClick={() => download([record])}>이 기록 JSON Export</button></div>
+            <div className="record-actions"><button type="button" className="button secondary small" disabled={loading || !!deletingId} onClick={() => download([record])}>이 기록 JSON Export</button><button type="button" className="button secondary small" disabled={loading || !!deletingId} onClick={() => remove(record)} aria-label={`이미지 ${record.image.imageId.slice(0, 8)} 결과 삭제`}>{deletingId === record.recordId ? "삭제 중…" : "결과 삭제"}</button></div>
             <dl className="result-meta"><div><dt>실험 ID</dt><dd>{record.recordId}</dd></div><div><dt>이미지</dt><dd>{record.image.width} × {record.image.height} · {record.image.mimeType}</dd></div><div><dt>생성 / 저장</dt><dd>{new Date(record.createdAt).toLocaleString("ko-KR")} / {new Date(record.updatedAt).toLocaleString("ko-KR")}</dd></div>
               {record.analysis && <><div><dt>모델</dt><dd>{record.analysis.responseModel} (요청: {record.analysis.requestedModel})</dd></div><div><dt>분석 / 프롬프트</dt><dd>{new Date(record.analysis.analyzedAt).toLocaleString("ko-KR")} · {record.analysis.promptVersion}</dd></div><div><dt>토큰 사용량</dt><dd>{record.analysis.usage ? `입력 ${record.analysis.usage.inputTokens} / 출력 ${record.analysis.usage.outputTokens}` : "기록 없음"}</dd></div></>}
             </dl>

@@ -15,10 +15,12 @@
 
 ## Git Convention
 
-Codex가 향후 commit을 요청받으면 반드시 Conventional Commits 기반 `<type>: <description>` 형식을 사용한다. 메시지는 영어이며 한 commit은 가능한 한 하나의 논리적인 변경을 담는다.
+Codex가 향후 commit을 요청받으면 반드시 Conventional Commits 기반 `<type>: <description>` 형식을 사용한다. 설명은 한글 중심으로 작성하고, type과 모델명·API·코드 식별자 등 필요한 기술 용어는 영어를 유지한다. 한 commit은 가능한 한 하나의 논리적인 변경을 담는다.
+
+PR 제목과 본문도 한글 중심으로 작성한다. 기술 용어·파일 경로·명령어는 필요한 경우 영어로 표기한다. 변경 목적과 동작, 검증 결과를 간결하게 설명한다.
 
 허용 type: `feat` (새 기능), `fix` (버그), `refactor` (동작 변경 없는 코드 개선), `docs` (문서), `style` (UI/CSS), `test` (테스트), `chore` (설정/패키지).
 
-예: `feat: add feature discovery page`, `fix: handle invalid image uploads`.
+예: `feat: Feature Discovery 테스트 페이지 추가`, `fix: 잘못된 이미지 업로드 처리`.
 
 commitlint, Husky, GitHub Actions, Issue Template, Branch Protection은 현재 범위에서 제외한다.

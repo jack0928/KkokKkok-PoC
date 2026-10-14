@@ -60,7 +60,7 @@ OpenAI에는 이미지와 탐색 프롬프트만 보낸다. 사람의 Review/메
 
 회원가입, SNS API, Personal Exposure Profile, Embedding/Clustering, Risk Score, Privacy Edit, Python/Spring 서버, Production DB, 자동 Matching, Taxonomy UI, JSON Import, 정밀 Bounding Box는 제외한다.
 
-명시적 요청이 있을 때만 논리적 단위로 Conventional Commit을 생성한다. push는 별도 요청이 필요하다. Secret, 실제 사진, Export 결과, proposal.docx는 commit하지 않는다.
+명시적 요청이 있을 때만 논리적 단위로 Conventional Commit을 생성한다. commit 설명과 PR 제목·본문은 한글 중심으로 작성하고, type 및 필요한 기술 용어·식별자·명령어는 영어로 유지한다. push는 별도 요청이 필요하다. Secret, 실제 사진, Export 결과, proposal.docx는 commit하지 않는다.
 
 ## 현재 검증 기록 (2026-10-07)
 

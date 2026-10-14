@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Analysis, analysisSchema, applyAnalysis, DiscoveryRecord, HumanReview, MAX_IMAGE_BYTES, newHumanCue, newRecord, preparedImageSchema, RISK_DEFINITION } from "@/lib/discovery";
+import { Analysis, analysisSchema, applyAnalysis, DiscoveryRecord, HumanReview, MAX_IMAGE_BYTES, newHumanCue, newRecord, preparedImageSchema } from "@/lib/discovery";
 import { deleteRecord, exportRecords, migrateBrowserRecords, readBrowserRecords, readRecords, saveRecord } from "@/lib/storage";
 import { CueReview, FeatureTypeSuggestions } from "./cue-review";
 import { ImageUpload } from "./image-upload";
+import { ReviewGuide } from "./review-guide";
 
 async function responseJson(response: Response) {
   let body;
@@ -172,7 +173,7 @@ export function DiscoveryWorkspace() {
             {!record?.analysis && <><div className="privacy-note"><strong>외부 API 전송 안내</strong><p>분석 버튼을 누르면 이 이미지가 OpenAI로 전송되며 API 비용이 발생합니다. 서버에 원본·분석본을 저장하지 않지만 OpenAI의 별도 데이터 보존 정책이 적용됩니다.</p><label className="checkbox-label"><input type="checkbox" disabled={!!busy || !record} checked={consent} onChange={(e) => setConsent(e.target.checked)} />내가 사용할 권한이 있는 이미지이며, 외부 전송에 동의합니다.</label></div><button type="button" className="button primary wide" onClick={analyze} disabled={!record || !preview || !consent || !!busy}>VLM으로 후보 탐색 <span aria-hidden="true">↗</span></button></>}
             {record?.analysis && <div className="analysis-info"><span className="pill green">분석 완료</span><p>{record.analysis.responseModel}</p><p className="caption">한 기록의 모델 원본은 덮어쓰지 않습니다. 재분석은 새 실험으로 진행하세요.</p></div>}
           </section>
-          <section className="panel risk-guide"><h2>Risk Level 기준</h2><p>{RISK_DEFINITION}</p><dl><div><dt><span className="risk-badge low">low</span></dt><dd>일반적 단서로, 위치를 좁히는 데 제한적</dd></div><div><dt><span className="risk-badge medium">medium</span></dt><dd>다른 정보와 조합하면 위치를 좁히는 데 유용</dd></div><div><dt><span className="risk-badge high">high</span></dt><dd>구체적인 식별자로, 위치 특정에 매우 유용</dd></div></dl><p className="caption">탐지 confidence나 실제 노출 확률을 의미하지 않습니다. 잠정 기준이며 사람의 이유를 함께 기록합니다.</p></section>
+          <ReviewGuide />
         </aside>
 
         <section className="review-column" aria-label="Feature 후보 검토">

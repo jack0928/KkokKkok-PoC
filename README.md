@@ -104,7 +104,9 @@ Experiment 2, 자동 매칭, Taxonomy 편집/버전 관리 UI, JSON Import, EXIF
 
 ## Git Convention
 
-Conventional Commits의 간단한 `<type>: <description>` 형식을 사용합니다. 메시지는 영어이며 한 commit에는 가능한 한 하나의 논리적인 변경을 담습니다.
+Conventional Commits의 간단한 `<type>: <description>` 형식을 사용합니다. 설명은 한글 중심으로 작성하고, type과 모델명·API·코드 식별자 등 필요한 기술 용어는 영어를 유지합니다. 한 commit에는 가능한 한 하나의 논리적인 변경을 담습니다.
+
+PR 제목과 본문도 한글 중심으로 작성합니다. 기술 용어·파일 경로·명령어는 필요한 경우 영어로 표기하며, 변경 목적과 동작·검증 결과를 간결하게 설명합니다.
 
 | type | 용도 |
 | --- | --- |
@@ -116,7 +118,7 @@ Conventional Commits의 간단한 `<type>: <description>` 형식을 사용합니
 | test | 테스트 추가/수정 |
 | chore | 설정/패키지 등 |
 
-예: `feat: add feature discovery page`, `fix: handle invalid image uploads`.
+예: `feat: Feature Discovery 테스트 페이지 추가`, `fix: 잘못된 이미지 업로드 처리`.
 
 Codex는 명시적으로 요청받은 경우에만 commit/push합니다. commitlint/Husky 등의 자동화는 사용하지 않습니다.
 
