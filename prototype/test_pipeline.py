@@ -1,13 +1,17 @@
 """Privacy/input and geometric evidence tests. No model downloads or paid API."""
 import io
+import base64
+import hashlib
+import json
 from pathlib import Path
+import re
 import tempfile
 import unittest
 
 import numpy as np
 from PIL import Image
 
-from pipeline import PrototypeError, geometry, prepare
+from pipeline import PrototypeError, geometry, prepare, report_html, script_json
 
 
 class PreparationTests(unittest.TestCase):
@@ -101,6 +105,58 @@ class GeometryTests(unittest.TestCase):
         self.assertEqual(stats["inliers"], 0)
         self.assertEqual(stats["status"], "insufficient-evidence")
         self.assertEqual(len(mask), 0)
+
+
+class ReportTests(unittest.TestCase):
+    def render(self, legacy=False):
+        image = Image.new("RGB", (100, 80), "blue")
+        candidate = {"rank": 1, "imageId": "a" * 64, "status": "insufficient-evidence",
+            "similarity": 0.5, "matches": 3, "inliers": 2, "inlierRatio": 2/3,
+            "queryCoverage": 0.1, "candidateCoverage": 0.1,
+            "queryPoints": [[10, 10], [20, 20]], "candidatePoints": [[12, 12], [22, 22]],
+            "reviewLabel": "</script><script>alert('private')</script>",
+            "fixtureDescription": "<img src=https://example.com/private>"}
+        if not legacy:
+            candidate.update(allQueryPoints=[[10, 10], [50, 50], [20, 20]],
+                             allCandidatePoints=[[12, 12], [80, 2], [22, 22]],
+                             inlierMask=[True, False, True])
+        result = {"candidates": [candidate], "inputKind": "synthetic", "galleryCount": 1,
+            "elapsedSeconds": 1, "cacheHits": 0, "createdAt": "2026-10-20T00:00:00Z",
+            "timings": {"models": 0, "retrieval": 0, "matching": 1},
+            "runtime": {"device": "cpu", "embeddingModel": "test", "embeddingRevision": "test"},
+            "thresholds": {"minimumInliers": 12, "minimumRatio": .35, "minimumCoverage": .02}}
+        return report_html(result, image, [{"query": image, "candidate": image, "comparison": image}])
+
+    def payload(self, content):
+        return json.loads(re.search(r'<script type="application/json" id="match-data">(.*?)</script>', content, re.S)[1])
+
+    def test_full_report_preserves_rejected_points_and_blocks_script_injection(self):
+        content = self.render()
+        pair = self.payload(content)["pairs"][0]
+        self.assertEqual(pair["queryPoints"][1], [50, 50])
+        self.assertEqual(pair["inlierMask"], [True, False, True])
+        self.assertTrue(pair["complete"])
+        self.assertNotIn("<script>alert", content)
+        self.assertNotIn("<img src=https://", content)
+        # Only scripts explicitly hashed by the local generator can execute.
+        script = (Path(__file__).parent / "viewer.js").read_text()
+        signature = base64.b64encode(hashlib.sha256(script.encode()).digest()).decode()
+        self.assertIn("script-src 'sha256-" + signature + "'", content)
+        self.assertNotIn("script-src 'unsafe-inline'", content)
+
+    def test_legacy_report_does_not_invent_rejected_coordinates(self):
+        pair = self.payload(self.render(legacy=True))["pairs"][0]
+        self.assertFalse(pair["complete"])
+        self.assertEqual(len(pair["queryPoints"]), 2)
+        self.assertEqual(pair["totalMatches"], 3)
+        self.assertEqual(pair["inlierMask"], [True, True])
+
+    def test_embedded_json_cannot_close_its_script_element(self):
+        text = "</script><script>unexpected()</script>&"
+        encoded = script_json({"text": text})
+        self.assertNotIn("<", encoded)
+        self.assertNotIn("&", encoded)
+        self.assertEqual(json.loads(encoded)["text"], text)
 
 
 if __name__ == "__main__":

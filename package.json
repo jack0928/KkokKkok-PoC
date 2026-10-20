@@ -11,7 +11,13 @@
     "test:workflow": "node --conditions=react-server tests/local-workflow.cjs",
     "pipeline:demo": ".venv-pipeline/bin/python prototype/pipeline.py demo",
     "pipeline:run": ".venv-pipeline/bin/python prototype/pipeline.py run",
-    "pipeline:test": ".venv-pipeline/bin/python -m unittest discover -s prototype -p 'test_*.py'"
+    "pipeline:test": ".venv-pipeline/bin/python -m unittest discover -s prototype -p 'test_*.py'",
+    "pipeline:test-viewer": "node prototype/test_viewer.cjs",
+    "pipeline:reports": ".venv-pipeline/bin/python prototype/report_hub.py",
+    "pipeline:reports:serve": ".venv-pipeline/bin/python prototype/report_hub.py --serve",
+    "pipeline:diagnose": ".venv-pipeline/bin/python prototype/diagnostics.py",
+    "pipeline:review": "node --env-file=.env.local prototype/review-diagnostics.cjs",
+    "pipeline:test-review": "node prototype/test-review-diagnostics.cjs"
   },
   "engines": {
     "node": ">=22.13.0"

@@ -1,0 +1,19 @@
+.flow-step{position:relative;border:0;border-radius:8px;background:#20314a;color:inherit;font:inherit;text-align:left;padding:10px 14px;cursor:help}
+.flow-step:focus-visible{outline:2px solid #8cbcff;outline-offset:4px}
+.flow-step .step-tooltip{position:absolute;left:0;top:calc(100% + 10px);width:290px;max-width:75vw;padding:14px 16px;border:1px solid #516780;border-radius:10px;background:#21324a;color:#edf3ff;font-size:14px;line-height:1.6;box-shadow:0 10px 28px #0008;z-index:10;visibility:hidden;opacity:0;pointer-events:none}
+.flow-step:not([data-dismissed="true"]):hover .step-tooltip,.flow-step:not([data-dismissed="true"]):focus .step-tooltip,.flow-step[data-open="true"] .step-tooltip{visibility:visible;opacity:1}
+.flow-step:last-child .step-tooltip{left:auto;right:0}
+[hidden]{display:none!important}
+.viewer-controls,.point-navigation{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:16px 0}
+.viewer-controls label,.point-navigation label{display:flex;align-items:center;gap:7px;font-size:14px}
+.match-viewer button,.match-viewer select{border:1px solid #516780;background:#20314a;color:#edf3ff;border-radius:7px;padding:8px 10px;font:inherit;font-size:14px;max-width:100%}
+.match-viewer button{cursor:pointer}.match-viewer button:disabled,.match-viewer select:disabled{opacity:.45;cursor:default}
+.match-viewer button[aria-pressed="true"]{background:#335a87;border-color:#8cbcff}
+.match-viewer input{accent-color:#8cbcff}.match-viewer :focus-visible{outline:2px solid #8cbcff;outline-offset:3px}
+.viewer-help,.viewer-counts,.selection-status{font-size:14px;color:#bdcbe0}.selection-status{min-height:2em}
+.passed-key{color:#59f2ad}.rejected-key{color:#ffbf69}
+.overview{display:block;width:100%;height:auto;border:1px solid #3a4a63;border-radius:8px;cursor:pointer;touch-action:pan-y}
+.overview.selecting-region{cursor:crosshair;touch-action:none}
+.zoom-pair{display:grid;grid-template-columns:1fr 1fr;gap:16px}.zoom-pair canvas{display:block;width:100%;height:auto;max-width:360px;margin:8px auto 0;border:1px solid #516780;border-radius:8px}
+.zoom-pair figcaption{text-align:center}.viewer-counts{margin:10px 0}.region-status{font-size:13px;color:#a5b2c7}.region-tools{padding-bottom:12px;border-bottom:1px solid #2b394e}
+@media(max-width:680px){.viewer-controls,.point-navigation{gap:10px}.zoom-pair{gap:8px}.flow-step .step-tooltip{position:fixed;left:16px!important;right:16px!important;top:auto;bottom:16px;width:auto;max-width:none}.zoom-pair figcaption{font-size:12px}}

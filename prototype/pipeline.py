@@ -213,45 +213,111 @@ def comparison(image0, image1, points0, points1, mask):
     return canvas
 
 
+def viewer_markup():
+    return '''<div class="match-viewer" hidden>
+      <p class="viewer-help"><span class="passed-key">● 기하 검증 통과</span> / <span class="rejected-key">● 기하 검증 탈락</span> · 통과가 올바른 연결을, 탈락이 잘못된 연결을 뜻하지는 않습니다.</p>
+      <p data-control="legacy" class="note" hidden>이전 실행은 통과점만 저장했습니다. 탈락점을 보려면 다시 분석하세요. 전체 통계는 원래 실행의 값입니다.</p>
+      <div class="viewer-controls">
+        <label data-control="geometry-label" hidden>검증 방식 <select data-control="geometry"><option value="homography">Homography</option><option value="fundamental">Fundamental matrix</option></select></label>
+        <label data-control="detected-label" hidden><input type="checkbox" data-control="detected">처음 검출한 점</label>
+        <label><input type="checkbox" data-control="passed" checked> 통과점</label>
+        <label><input type="checkbox" data-control="rejected"> 탈락점</label>
+        <label>표시 개수 <select data-control="limit"><option value="5">5개</option><option value="10">10개</option><option value="30">30개</option><option value="all">전체</option></select></label>
+        <label><input type="checkbox" data-control="lines" checked> 연결선</label>
+      </div>
+      <div class="viewer-controls region-tools">
+        <button type="button" data-control="select-region" aria-pressed="false">영역 선택</button>
+        <button type="button" data-control="reset-region">영역 초기화</button>
+        <span data-control="region-status" class="region-status"></span>
+      </div>
+      <p class="viewer-help">왼쪽은 새 사진, 오른쪽은 과거 사진입니다. 처음에는 통과점·탈락점을 각각 5개씩만 살펴보세요. 실패 원인을 찾기 위한 표본 검토이며 전체 정확도 평가는 아닙니다.</p>
+      <p class="viewer-help">점을 누르면 두 부분을 아래에서 확대합니다. 이전/다음은 표시된 점만 이동합니다. 영역 선택을 켜고 사진에서 드래그하면 해당 영역의 점만 표시합니다.</p>
+      <p data-control="counts" class="viewer-counts" aria-live="polite"></p>
+      <canvas data-control="overview" class="overview" role="img" aria-label="새 사진과 과거 사진의 대응점. 아래 대응점 선택 메뉴로도 선택할 수 있습니다."></canvas>
+      <div class="point-navigation">
+        <button type="button" data-control="previous">이전 점</button>
+        <label>대응점 선택 <select data-control="point"></select></label>
+        <button type="button" data-control="next">다음 점</button>
+        <label>확대 범위 <input type="range" data-control="radius" min="24" max="160" step="8" value="64"><output data-control="zoom-range"></output></label>
+      </div>
+      <p data-control="selection" class="selection-status" aria-live="polite"></p>
+      <div class="zoom-pair">
+        <figure><figcaption>새 사진 · 선택한 점 중심 확대</figcaption><canvas data-control="zoom-query" width="320" height="320" role="img" aria-label="새 사진의 선택한 대응점 확대"></canvas></figure>
+        <figure><figcaption>과거 사진 · 선택한 점 중심 확대</figcaption><canvas data-control="zoom-candidate" width="320" height="320" role="img" aria-label="과거 사진의 선택한 대응점 확대"></canvas></figure>
+      </div>
+      <p class="viewer-help">십자선 중심이 대응점입니다. 확대 범위는 매칭에 사용한 이미지의 픽셀 기준입니다. 화면 조작은 모델 결과나 판정 기준을 변경하지 않습니다.</p>
+    </div>'''
+
+
+def script_json(value):
+    # JSON is embedded as inert data. Prevent strings from closing the script tag.
+    return json.dumps(value, ensure_ascii=False, allow_nan=False).replace("&", "\\u0026").replace("<", "\\u003c").replace(">", "\\u003e")
+
+
 def report_html(result, query, visuals):
+    script = (Path(__file__).parent / "viewer.js").read_text()
+    viewer_style = (Path(__file__).parent / "viewer.css").read_text()
     cards = []
-    for candidate, visual in zip(result["candidates"], visuals):
+    pairs = []
+    for index, (candidate, visual) in enumerate(zip(result["candidates"], visuals)):
         ok = candidate["status"] == "visual-correspondence"
         status = "시각적 대응 근거 있음" if ok else "판단 보류 · 대응 근거 부족"
         fixture = ("<p class='muted'>합성 입력 구성: " + html.escape(candidate["fixtureDescription"]) + "</p>") if "fixtureDescription" in candidate else ""
-        cards.append(f'''<article data-status="{candidate['status']}">
+        label = "<p class='muted'>" + html.escape(candidate["reviewLabel"]) + "</p>" if "reviewLabel" in candidate else ""
+        complete = all(key in candidate for key in ("allQueryPoints", "allCandidatePoints", "inlierMask"))
+        pairs.append({"image": data_url(visual["candidate"]), "complete": complete,
+                      "querySize": list(visual["query"].size), "candidateSize": list(visual["candidate"].size),
+                      "queryPoints": candidate["allQueryPoints"] if complete else candidate["queryPoints"],
+                      "candidatePoints": candidate["allCandidatePoints"] if complete else candidate["candidatePoints"],
+                      "inlierMask": candidate["inlierMask"] if complete else [True] * len(candidate["queryPoints"]),
+                      "totalMatches": candidate["matches"], "totalInliers": candidate["inliers"]})
+        cards.append(f'''<article data-status="{candidate['status']}" data-pair="{index}">
           <div class="head"><h2>후보 {candidate['rank']:02d}</h2><span class="badge {'ok' if ok else ''}">{status}</span></div>
-          {fixture}
+          {fixture}{label}
           <div class="metrics"><span>검색 유사도 <b>{candidate['similarity']:.3f}</b></span>
           <span>대응점 <b>{candidate['matches']}</b></span><span>검증 통과 <b>{candidate['inliers']}</b></span>
           <span>통과 비율 <b>{candidate['inlierRatio']:.1%}</b></span>
           <span>분포 면적 · 새 사진 / 과거 사진 <b>{candidate['queryCoverage']:.1%} / {candidate['candidateCoverage']:.1%}</b></span></div>
-          <figure><img src="{data_url(visual)}" alt="왼쪽 새 사진과 오른쪽 과거 사진의 대응점 비교">
-          <figcaption>왼쪽: 새 사진 · 오른쪽: 과거 사진 · 초록 선: 기하 검증 통과 대응점 (최대 60개)</figcaption></figure>
+          <p class="viewer-error note" hidden>대응점 뷰어를 열지 못했습니다. 아래 정적 미리보기를 확인하세요.</p>
+          {viewer_markup()}
+          <figure class="static-comparison"><img src="{data_url(visual['comparison'])}" alt="왼쪽 새 사진과 오른쪽 과거 사진의 대응점 비교">
+          <figcaption>정적 미리보기 · 왼쪽: 새 사진 · 오른쪽: 과거 사진 · 초록 선: 기하 검증 통과점 (최대 60개). 대화형 검토에는 JavaScript가 필요합니다.</figcaption></figure>
           <details><summary>후보 이미지 ID와 해석</summary><p>{html.escape(candidate['imageId'])}</p>
           <p>대응은 동일 장소·배경의 확정이나 위치 위험도 판정이 아닙니다. 동일한 물건·포스터도 대응할 수 있습니다.</p></details></article>''')
     synthetic = result["inputKind"] == "synthetic"
     mode = "합성 도형 · 실제 모델 실행" if synthetic else "사용자 제공 이미지 · 실제 모델 실행"
     info = result["runtime"]
+    payload = script_json({"queryImage": data_url(visuals[0]["query"]) if visuals else data_url(query), "pairs": pairs})
+    hash_script = base64.b64encode(hashlib.sha256(script.encode()).digest()).decode()
+    hash_data = base64.b64encode(hashlib.sha256(payload.encode()).digest()).decode()
+    step_descriptions = [
+        ("① 분석본 생성", "사진의 방향과 크기를 정리하고 촬영 메타데이터를 제거합니다. 모델에는 이 분석본만 사용합니다."),
+        ("② DINOv2 검색", "사진을 비교용 숫자로 바꾸고 과거 사진 중 비슷한 후보를 찾습니다. 아직 같은 장소라고 판단하는 단계는 아닙니다."),
+        ("③ DISK + LightGlue", "두 사진의 모서리나 무늬처럼 작은 부분을 찾아 서로 연결합니다. 같은 상품이나 광고도 연결될 수 있습니다."),
+        ("④ 기하 검증", "사진을 다른 각도에서 찍었다고 봤을 때, 연결한 점들의 위치가 서로 자연스럽게 맞는지 확인합니다. 기준에 못 미치면 판단을 보류합니다."),
+    ]
+    flow = "".join(f'<button type="button" class="flow-step" aria-label="{title}" aria-describedby="step-{index}">{title}<span role="tooltip" class="step-tooltip" id="step-{index}">{description}</span></button>'
+                   for index, (title, description) in enumerate(step_descriptions, 1))
     return f'''<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'sha256-{hash_script}' 'sha256-{hash_data}'; base-uri 'none'; form-action 'none'">
     <title>꼭꼭 · 사진 연결 프로토타입</title><style>
     :root{{color-scheme:dark}}*{{box-sizing:border-box}}body{{margin:0;background:#0c1321;color:#e7edf6;font:16px/1.65 system-ui,sans-serif}}
     main{{max-width:1160px;margin:auto;padding:48px 24px}}h1{{font-size:clamp(26px,4vw,42px);line-height:1.3;margin:10px 0 18px}}h2{{margin:0;font-size:22px}}
     .eyebrow{{color:#8cbcff;letter-spacing:.1em;font-size:13px}}.muted,figcaption{{color:#a5b2c7}}.intro,article,.stage{{border:1px solid #2b394e;border-radius:16px;padding:24px;background:#141f30;margin:24px 0}}
     .intro{{display:grid;grid-template-columns:1fr 260px;gap:28px}}.intro img{{width:100%;border-radius:10px;max-height:240px;object-fit:contain}}
-    .flow{{display:flex;gap:10px;flex-wrap:wrap}}.flow span{{background:#20314a;border-radius:8px;padding:8px 12px}}
+    .flow{{display:flex;gap:10px;flex-wrap:wrap}}
     .head,.metrics{{display:flex;align-items:center;gap:14px;flex-wrap:wrap}}.head{{justify-content:space-between}}.metrics{{margin:18px 0;font-size:14px;color:#bdcbe0}}
     b{{color:#fff}}.badge{{font-size:13px;padding:5px 12px;border-radius:20px;background:#39404d}}.ok{{background:#184637;color:#a9f9cf}}
     figure{{margin:0}}figure img{{width:100%;border-radius:8px}}figcaption{{font-size:13px;margin-top:8px}}summary{{cursor:pointer}}details{{margin-top:16px}}details p{{overflow-wrap:anywhere}}
     .note{{border-left:3px solid #e6bc71;padding-left:16px}}footer{{font-size:13px;color:#a5b2c7}}@media(max-width:680px){{.intro{{grid-template-columns:1fr}}main{{padding:24px 14px}}}}
+    {viewer_style}
     </style></head><body><main><div class="eyebrow">KKOKKKOK / LOCAL PIPELINE PROTOTYPE</div>
     <h1>비슷한 사진에서<br>연결 근거까지 확인하기</h1>
     <p class="muted">{mode} · 외부 이미지 전송 없음 · GPT API 호출 없음</p>
-    <div class="flow"><span>① 분석본 생성</span><span>② DINOv2 검색</span><span>③ DISK + LightGlue</span><span>④ 기하 검증</span></div>
+    <div class="flow" aria-label="분석 단계별 설명">{flow}</div>
     <section class="intro"><div><h2>새 사진과 과거 사진 {result['galleryCount']}장 비교</h2>
     <p>검색 순서대로 상위 {len(result['candidates'])}장을 표시합니다. 부분 매칭 후의 순위 재정렬은 하지 않습니다.</p>
-    <p class="note">{'합성 도형의 변형으로 만든 입력입니다. 모델 연결·기하 검증의 동작 확인용이며 실제 장소 사진의 성능 증거가 아닙니다.' if synthetic else '사용자가 제공한 사진입니다. 정답 관계가 없으므로 검색 정확도·같은 장소 여부를 평가한 결과는 아닙니다.'}</p>
+    <p class="note">{'합성 도형의 변형으로 만든 입력입니다. 모델 연결·기하 검증의 동작 확인용이며 실제 장소 사진의 성능 증거가 아닙니다.' if synthetic else '사용자가 제공한 사진의 시각적 대응점 확인 결과입니다. 같은 장소 여부나 위치 노출 위험을 확정하지 않습니다.'}</p>
     <p class="muted">처리 {result['elapsedSeconds']:.1f}초 · Embedding 캐시 {result['cacheHits']}건 · 실행 장치 {html.escape(info['device'])}</p>
     <p class="muted">모델 준비 {result['timings']['models']:.1f}초 / 특징 추출·검색 {result['timings']['retrieval']:.1f}초 / 부분 매칭 {result['timings']['matching']:.1f}초</p></div>
     <img src="{data_url(query)}" alt="메타데이터가 제거된 새 사진"></section>
@@ -262,7 +328,7 @@ def report_html(result, query, visuals):
     <p>Homography RANSAC 4px · 통과점 ≥ {result['thresholds']['minimumInliers']} · 통과 비율 ≥ {result['thresholds']['minimumRatio']:.0%} · 양쪽 대응점 볼록 껍질 면적 ≥ {result['thresholds']['minimumCoverage']:.0%}</p>
     <p>모두 동작 확인을 위한 잠정 기준입니다. 면적은 대응점 분포 지표이며 실제 배경 일치 면적이 아닙니다. 한 평면 가정이 맞지 않는 장면은 놓칠 수 있습니다.</p></details></section>
     <footer>비공개 로컬 결과 · 이미지가 HTML 안에 포함되어 있습니다. 공개 저장소·공개 호스팅에 업로드하지 마세요. 생성 시각 {html.escape(result['createdAt'])}</footer>
-    </main></body></html>'''
+    </main><script type="application/json" id="match-data">{payload}</script><script>{script}</script></body></html>'''
 
 
 def synthetic_scene(seed, variant=False):
@@ -382,17 +448,20 @@ def run(args):
             args.min_inliers, args.min_ratio, args.min_coverage)
         stats.update({"rank": rank, "imageId": candidate["analysisHash"], "similarity": similarity,
                       "queryPoints": points0[mask].tolist(), "candidatePoints": points1[mask].tolist(),
+                      "allQueryPoints": points0.tolist(), "allCandidatePoints": points1.tolist(),
+                      "inlierMask": mask.tolist(),
                       "queryMatchSize": list(query_image.size), "candidateMatchSize": list(image.size)})
         if "fixtureDescription" in candidate:
             stats["fixtureDescription"] = candidate["fixtureDescription"]
         candidates.append(stats)
-        visuals.append(comparison(query_image, image, points0, points1, mask))
+        visuals.append({"query": query_image, "candidate": image,
+                        "comparison": comparison(query_image, image, points0, points1, mask)})
         print(f"부분 비교 {rank}/{min(args.k, len(gallery))} 완료", flush=True)
     matching_seconds = time.perf_counter() - matching_start
     import importlib.metadata
     direct_url = json.loads(importlib.metadata.distribution("lightglue").read_text("direct_url.json") or "{}")
     checkpoints = Path(models.torch.hub.get_dir()) / "checkpoints"
-    result = {"schemaVersion": 1, "experiment": "retrieval-correspondence-prototype",
+    result = {"schemaVersion": 2, "experiment": "retrieval-correspondence-prototype",
         "inputKind": "synthetic" if args.command == "demo" else "user-provided",
         "createdAt": datetime.now(timezone.utc).isoformat(), "queryImageId": query["analysisHash"],
         "galleryCount": len(gallery), "excludedDuplicates": excluded, "cacheHits": cache_hits,
@@ -417,6 +486,8 @@ def run(args):
     private_write(output / "report.html", report_html(result, query["image"], visuals).encode())
     private_write(output / "report.json", (json.dumps(result, ensure_ascii=False, indent=2) + "\n").encode())
     private_write(PRIVATE / "latest-report.html", report_html(result, query["image"], visuals).encode())
+    from report_hub import discover_reports, write_pages
+    write_pages(PRIVATE, discover_reports(PRIVATE))
     print(f"완료 · {result['elapsedSeconds']:.1f}초 · 캐시 {cache_hits}건", flush=True)
     print("보고서: private-data/pipeline/latest-report.html", flush=True)
     return result
