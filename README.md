@@ -6,6 +6,8 @@ VLM 결과는 Ground Truth가 아니라 사람이 검토할 **Feature 후보**�
 
 ## 실행
 
+누적 분석의 후속 방법론을 시연하는 **별도 사진 검색·부분 대응 프로토타입**은 [prototype/README.md](prototype/README.md)를 참고하세요. DINOv2 검색과 DISK + LightGlue 대응 시각화를 로컬에서 실행합니다. 기존 Experiment 1 앱과 DB는 변경하지 않으며 GPT 단서 결합·전체 누적 위험 평가는 아직 연결하지 않았습니다.
+
 Node.js 22.13 이상을 사용합니다(가능하면 LTS). Next.js + TypeScript + React와 서버 Route Handler로 구성하며 별도 Backend 서버 없이 로컬 SQLite DB를 사용합니다(Node 내장 SQLite 모듈).
 
 ```sh

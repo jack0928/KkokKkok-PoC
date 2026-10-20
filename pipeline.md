@@ -151,3 +151,7 @@ CPU/GPU 지원과 PC의 메모리·처리 속도는 선택한 도구로 확인�
 - [LightGlue 공식 저장소](https://github.com/cvg/LightGlue)
 
 모델 조합, 하드웨어, K·연결 임계값, 영역 표현, 단서 정규화와 자동 누적 판단 기준은 아직 확정되지 않았다. 이 문서는 성능·비용·처리 시간의 검증 결과를 주장하지 않는다.
+
+## 별도 시연 프로토타입
+
+사용자의 후속 요청에 따라 `prototype/`에 검색·부분 대응 단계의 독립 실행 프로토타입을 추가한다. DINOv2-small 검색 → DISK + LightGlue → Homography RANSAC → 비공개 로컬 HTML 보고서를 구현하며, 방법론 검토를 위한 잠정 조합이다. 기존 Experiment 1 앱·DB 및 Experiment 2는 변경하지 않는다. GPT 단서 추출·자동 단서 결합·위치 식별 유용성 평가는 이 프로토타입에 아직 연결하지 않는다. 실행 방법과 한계는 [prototype/README.md](prototype/README.md)에 기록한다.

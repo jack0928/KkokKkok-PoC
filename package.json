@@ -8,7 +8,10 @@
     "start": "node scripts/start-local.cjs start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test:workflow": "node --conditions=react-server tests/local-workflow.cjs"
+    "test:workflow": "node --conditions=react-server tests/local-workflow.cjs",
+    "pipeline:demo": ".venv-pipeline/bin/python prototype/pipeline.py demo",
+    "pipeline:run": ".venv-pipeline/bin/python prototype/pipeline.py run",
+    "pipeline:test": ".venv-pipeline/bin/python -m unittest discover -s prototype -p 'test_*.py'"
   },
   "engines": {
     "node": ">=22.13.0"
