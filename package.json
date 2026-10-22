@@ -17,7 +17,10 @@
     "pipeline:reports:serve": ".venv-pipeline/bin/python prototype/report_hub.py --serve",
     "pipeline:diagnose": ".venv-pipeline/bin/python prototype/diagnostics.py",
     "pipeline:review": "node --env-file=.env.local prototype/review-diagnostics.cjs",
-    "pipeline:test-review": "node prototype/test-review-diagnostics.cjs"
+    "pipeline:test-review": "node prototype/test-review-diagnostics.cjs",
+    "pipeline:regions": ".venv-pipeline/bin/python prototype/region_experiment.py",
+    "pipeline:propose-regions": "node --env-file=.env.local prototype/propose-regions.cjs",
+    "pipeline:test-regions": "node prototype/test-region-proposals.cjs"
   },
   "engines": {
     "node": ">=22.13.0"

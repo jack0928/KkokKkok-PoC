@@ -22,6 +22,9 @@
 
 Python 3.13, Node.js 및 Git이 필요하다. 프로젝트 루트에서 실행한다.
 
+Node CLI와 테스트 의존성은 `npm ci`로 설치한다. GPT를 호출하려면 `.env.example`을 참고해
+각자 `.env.local`에 `OPENAI_API_KEY`, `OPENAI_MODEL`을 설정한다. 키와 환경 파일은 공유하거나 커밋하지 않는다.
+
 ```sh
 python3 -m venv .venv-pipeline
 .venv-pipeline/bin/python -m pip install -r prototype/requirements.txt
@@ -252,3 +255,52 @@ npm run pipeline:test-viewer -- --diagnostic private-data/pipeline/runs/실행ID
 기하 검증 구현은 [OpenCV 문서](https://docs.opencv.org/4.12.0/d9/d0c/group__calib3d.html),
 이미지 입력과 구조화 응답은 [OpenAI 이미지 입력](https://developers.openai.com/api/docs/guides/images-vision),
 [구조화 응답](https://developers.openai.com/api/docs/guides/structured-outputs?api-mode=responses)을 참고했다.
+
+## GPT 비교 영역 제안 실험
+
+기본 검색 파이프라인과 별도의 진단 명령이다. GPT에 두 분석본만 보내 공통 구조가 있을 법한
+사각형을 최대 두 쌍 제안받거나 보류한다. 사람 지정 영역·파일명·검토 의견은 요청에서 제외한다.
+제안은 정답이 아니며 실제 위치나 건물 이름을 추론하지 않는다.
+
+위 진단 설정과 같은 `pairs` 형식으로 1~3쌍을 지정한다. 사람 참조 영역은 선택 사항이다.
+
+```sh
+npm run pipeline:regions -- prepare --config private-data/pipeline/region-config.json
+# 출력된 준비 폴더 경로를 사용한다. 다음 명령은 실제 유료 API를 호출하고 분석본을 전송한다.
+npm run pipeline:propose-regions -- --input private-data/pipeline/region-experiments/준비ID/proposal-input.json
+npm run pipeline:regions -- run --experiment private-data/pipeline/region-experiments/준비ID
+# 아래 보조 검토도 실제 API를 호출한다. 실행 결과 회차 경로를 사용한다.
+npm run pipeline:review -- --run private-data/pipeline/runs/실행ID
+npm run pipeline:reports
+```
+
+로컬 모델은 미리 다운로드되어 있어야 한다. 전체 사진, 사람 지정 영역(있는 경우), GPT 영역을 비교한다.
+`fixed`는 원래 특징점·해상도를 유지하며 영역 밖 특징점을 제외하고 다시 매칭한다.
+`crop`은 영역을 잘라 특징점을 새로 추출하므로 해상도와 특징점 예산도 달라진다.
+이 실험은 H 4px만 적용하고 F는 실행하지 않는다. 선택과 보조 검토에 같은 모델을 쓸 수 있어
+독립적인 정확도 평가가 아니며, 대응점 증가만으로 대상 선택이 개선됐다고 판단하지 않는다.
+
+```sh
+npm run pipeline:test
+npm run pipeline:test-regions
+npm run pipeline:test-review
+npm run pipeline:test-viewer -- --regions private-data/pipeline/runs/실행ID/report.html
+```
+
+## 팀원에게 로컬 자료 전달
+
+클론에는 코드와 문서만 포함된다. 기존 회차를 이어서 보려면 사용 권한을 확인한 자료를
+접근 제한된 팀 저장소나 암호화 파일로 별도 전달하고 다음 경로를 유지한다.
+
+- `private-data/test-image/`: 재실행할 원본 사진.
+- `private-data/pipeline/runs/`: 회차별 결과·시각화·GPT 의견·사람 검토 원본.
+- `private-data/pipeline/group-*`: 초기 묶음별 보고서와 평가 페이지(있는 경우).
+- `private-data/pipeline/review-metadata.json`: 회차 이름과 코멘트.
+- 비공개 진단 설정 JSON과 `private-data/pipeline/region-experiments/`: 재실행에 필요한 설정과 영역 제안 기록.
+
+보고서 HTML에도 사진이 포함된다. 공개 링크나 Git 첨부로 전달하지 않는다.
+설정과 `manifest.json`의 로컬 절대 경로는 받는 PC 경로에 맞춰 수정한다. 원본 결과·모델 의견은 덮어쓰지 않는다.
+`models/`, `cache/`, 가상 환경, `node_modules/`는 전달하지 않아도 된다. 모델은 각자 내려받는다.
+`.env*`, API 키, 기존 앱 DB와 제안서는 전달 묶음에서 제외한다.
+받는 PC에서 `npm run pipeline:reports`로 목록을 다시 생성하고
+`npm run pipeline:reports:serve`로 회차와 코멘트를 확인한다.

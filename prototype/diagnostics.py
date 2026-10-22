@@ -86,9 +86,13 @@ def build_summary(directory):
             'homographyInliers':comp['homography']['inliers'],
             'fundamentalInliers':comp['fundamental']['inliers'] if comp['fundamental']['fitStatus']=='estimated' else None,
             'sampleModelVerdicts':dict(Counter(opinions[s['sampleId']]['verdict'] for s in candidate['reviewSamples'] if s['sampleId'] in opinions)),
-            'sampleCount':len(candidate['reviewSamples']),
+            'sampleCount':len(candidate['reviewSamples']), 'roiDiagnostics':candidate.get('roiDiagnostics'),
             'humanReviewed':sum(human.get(s['sampleId']) is not None for s in candidate['reviewSamples'])})
+    proposal_path=directory/'region-proposals.json'
+    proposal_calls=json.loads(proposal_path.read_text()).get('calls',[]) if proposal_path.is_file() else []
     return {'sourceCreatedAt':original['createdAt'],'conditions':conditions,
+            'completedRegionProposalCalls':sum(c['status']=='completed' for c in proposal_calls),
+            'regionProposalUsage':{key:sum(c.get('usage',{}).get(key,0) for c in proposal_calls if c.get('usage')) for key in ('input_tokens','output_tokens')},
             'completedApiCalls':sum(c['status']=='completed' for c in (model or {}).get('calls',[])),
             'failedApiCalls':sum(c['status']!='completed' for c in (model or {}).get('calls',[])),
             'usage':{key:sum(c.get('usage',{}).get(key,0) for c in (model or {}).get('calls',[]) if c.get('usage')) for key in ('input_tokens','output_tokens')},
@@ -99,6 +103,7 @@ def render_report(directory):
     result = json.loads((directory/'report.json').read_text())
     images = json.loads((directory/'visuals.json').read_text())
     inputs = json.loads((directory/'review-input.json').read_text())
+    h_only = result.get('geometryMode') == 'homography-only'
     model, human = load_reviews(directory)
     model_items = {s['sampleId']: s for call in (model or {}).get('calls', []) if call.get('status') == 'completed' for s in call['modelOutput']['reviews']}
     sample_images = {s['sampleId']: s['image'] for batch in inputs['batches'] for s in batch['samples']}
@@ -108,7 +113,7 @@ def render_report(directory):
         comparable = comp['homography']['fitStatus'] == comp['fundamental']['fitStatus'] == 'estimated'
         pairs.append({**visual, 'queryPoints': candidate['allQueryPoints'], 'candidatePoints': candidate['allCandidatePoints'],
             'queryDetectedPoints': candidate['queryDetectedPoints'], 'candidateDetectedPoints': candidate['candidateDetectedPoints'],
-            'geometryMasks': {k: comp[k]['inlierMask'] for k in ('homography', 'fundamental')},
+            'geometryMasks': {k: comp[k]['inlierMask'] for k in ('homography', 'fundamental')}, 'geometryMode':result.get('geometryMode'),
             'geometryAvailable': {k: comp[k]['fitStatus'] == 'estimated' for k in ('homography', 'fundamental')},
             'inlierMask': comp['homography']['inlierMask'], 'totalMatches': candidate['matches'],
             'totalInliers': candidate['inliers'], 'complete': True})
@@ -119,23 +124,44 @@ def render_report(directory):
             person = human.get(sid)
             model_text = '미실행 · 실제 GPT 검토 결과 없음' if not review else f"{review['verdict']} · {review['reason']} · 불확실성: {review['uncertainty']}"
             human_text = '미검토' if not person else f"{person['verdict']} · {person['reason']}"
-            category = sample['category'] if comparable else '검증 방식 간 비교 불가 · 추정 실패 또는 점 수 부족'
+            category = sample['category'] if comparable or h_only else '검증 방식 간 비교 불가 · 추정 실패 또는 점 수 부족'
             samples.append(f'''<details id="sample-{sid}"><summary>표본 #{sample['pointIndex']+1} · {html.escape(category)}</summary>
             <img class="sample-panel" src="{sample_images[sid]}" alt="중립 표시의 대응점 문맥과 확대 이미지">
             <p>GPT 보조 의견: {html.escape(model_text)}</p><p>사람 검토: {html.escape(human_text)}</p></details>''')
-        sensitivity = ''.join(f"<li>{method}: "+' / '.join(f"{run['thresholdPixels']:g}px → {run['inliers']}개" for run in comp['sensitivity'][method])+"</li>" for method in ('homography','fundamental'))
+        sensitivity = ''.join(f"<li>{method}: "+' / '.join(f"{run['thresholdPixels']:g}px → {run['inliers']}개" for run in comp['sensitivity'][method])+"</li>" for method in (('homography',) if h_only else ('homography','fundamental')))
         f_count = str(comp['fundamental']['inliers'])+'개' if comp['fundamental']['fitStatus']=='estimated' else '추정 불가 (F RANSAC은 최소 15쌍 필요)'
         agreement = f"둘 다 {comp['categories']['both']}개 · H만 {comp['categories']['homography-only']}개 · F만 {comp['categories']['fundamental-only']}개" if comparable else '한쪽 변환을 추정하지 못해 통과·탈락 비교 불가'
+        roi_overview = ''
+        if visual.get('regionOverview'):
+            roi_overview = '<details class="region-overview"><summary>선택한 영역 경계 · 전체 사진에서 보기</summary><div class="region-images">'+''.join(f'<img src="{url}" alt="선택 영역 사각형">' for url in visual['regionOverview'])+'</div><p>사각형은 영역 가설이며 정확한 물체 마스크나 정답이 아닙니다.</p></details>'
+        geometry_text = f'H 통과 {comp["homography"]["inliers"]}개 · H 4px 유지 · F 실행 안 함' if h_only else f'H 통과 {comp["homography"]["inliers"]}개 / F 통과 {f_count} · {agreement}'
         cards.append(f'''<article data-pair="{index}"><h2>{html.escape(candidate['conditionName'])}</h2>
         <p>처음 검출한 점 A {len(candidate['queryDetectedPoints'])}개 / B {len(candidate['candidateDetectedPoints'])}개 · 연결 {candidate['matches']}쌍</p>
-        <p>H 통과 {comp['homography']['inliers']}개 / F 통과 {f_count} · {agreement}</p>
+        <p>{geometry_text}</p>{roi_overview}
         <p>H: {html.escape(comp['homography']['fitStatus'])} / F: {html.escape(comp['fundamental']['fitStatus'])}</p>
         <p class="viewer-error" hidden>대응점 뷰어를 열지 못했습니다.</p>{viewer_markup()}
         <details><summary>임계값 민감도와 영역 내 점 수</summary><ul>{sensitivity}</ul><pre>{html.escape(json.dumps(candidate.get('roiDiagnostics'), ensure_ascii=False, indent=2))}</pre>
         <p>사각형 안에는 다른 물체·가림도 포함됩니다. 영역 내 점 수가 대상 물체에 속한 정확한 점 수는 아닙니다.</p></details>
         <h3>자동 검토 표본 · 정확도 평가용 무작위 표본 아님</h3>{''.join(samples)}</article>''')
     summary = build_summary(directory)
-    rows = ''.join(f"<tr><td>{html.escape(c['conditionName'])}</td><td>{c['matches']}</td><td>{c['homographyInliers']}</td><td>{c['fundamentalInliers'] if c['fundamentalInliers'] is not None else '추정 불가'}</td><td>{c['humanReviewed']}/{c['sampleCount']}</td></tr>" for c in summary['conditions'])
+    f_header = '' if h_only else '<th>F 통과</th>'
+    reference_header = '<th>참조 사각형 안 연결</th>' if h_only else ''
+    rows = ''
+    for c in summary['conditions']:
+        f_value = '' if h_only else f"<td>{c['fundamentalInliers'] if c['fundamentalInliers'] is not None else '추정 불가'}</td>"
+        reference = (c.get('roiDiagnostics') or {}).get('manualReferenceBothEndpoints')
+        reference_value = f'<td>{reference if reference is not None else "해당 없음"}</td>' if h_only else ''
+        rows += f"<tr><td>{html.escape(c['conditionName'])}</td><td>{c['matches']}</td><td>{c['homographyInliers']}</td>{f_value}{reference_value}<td>{c['humanReviewed']}/{c['sampleCount']}</td></tr>"
+    selection_info = ''
+    if result.get('regionSelection'):
+        selection_info = '<section class="region-selection"><h2>GPT 영역 제안 · 채택 여부와 이유</h2>'
+        for item in result['regionSelection']:
+            selection_info += '<h3>'+html.escape(item['pairName'])+' · '+html.escape(item['decision'])+'</h3><p>'+html.escape(item['reason'])+'</p>'
+            for index, region in enumerate(item['proposals'],1):
+                selection_info += '<p>후보 '+str(index)+' · '+html.escape(region['visualDescription'])+' · '+html.escape(region['reason'])+' · 불확실성: '+html.escape(region['uncertainty'])+'</p>'
+        selection_info += '<p>보류 응답에서도 전체 사진 조건은 남깁니다. GPT가 두 사진을 함께 보고 제안한 영역 가설이며 자동 동일 장소 판정이 아닙니다. 선택 모델과 검토 모델이 같아 독립적인 정확도 검증이 아닙니다. 참조 사각형 안 연결 수는 사람이 지정한 두 사각형 안에 양 끝점이 들어가는 개수이며, 정확한 대응이나 대상 물체 소속을 뜻하지 않습니다.</p></section>'
+    geometry_note = 'H의 후보 사진 재투영 거리 4px를 유지합니다. 이번 회차에서 F는 실행하지 않습니다. 원래 해상도 조건은 특징점·descriptor·좌표계를 재사용하고 영역 안의 점만 남깁니다.' if h_only else 'H는 후보 사진의 재투영 거리 4px, F는 두 방향 점-에피폴라선 거리의 최댓값 1px 기준입니다. 오차 정의가 달라 통과 수로 우열을 판단하지 않습니다. F는 평면·반복 요소에서도 잘못된 연결을 통과시킬 수 있습니다.'
+    page_title = 'GPT 영역 선택 비교' if h_only else '대응점 원인 분석'
     script = (Path(__file__).parent/'viewer.js').read_text()
     css = (Path(__file__).parent/'viewer.css').read_text()
     payload = script_json({'queryImage': images[0]['queryImage'], 'pairs': pairs})
@@ -145,12 +171,12 @@ def render_report(directory):
     api_status = '실제 GPT API 보조 검토 있음 · 원본과 별도 저장' if model and model_items else 'GPT API 검토 미완료'
     return f'''<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'sha256-{signature(script)}' 'sha256-{signature(payload)}'; base-uri 'none'; form-action 'none'">
-    <title>대응점 원인 분석</title><style>body{{margin:0;background:#0c1321;color:#e7edf6;font:15px/1.6 system-ui}}main{{max-width:1160px;margin:auto;padding:24px}}article{{background:#141f30;border:1px solid #34445b;border-radius:12px;margin:24px 0;padding:20px}}.sample-panel{{width:100%;max-width:768px}}details{{margin:14px 0}}summary{{cursor:pointer}}table{{width:100%;border-collapse:collapse}}th,td{{border-bottom:1px solid #34445b;padding:8px;text-align:left}}.table-scroll{{overflow:auto}}pre{{white-space:pre-wrap;overflow-wrap:anywhere}}{css}</style></head>
-    <body><main><h1>대응점 원인 분석</h1><p>실제 DISK + LightGlue 실행 · {api_status}</p>
-    <p>검증 방식을 바꿔도 같은 조건의 대응점 목록을 사용합니다. 처음 검출한 점은 하늘색, 연결은 선택한 검증 방식의 통과·탈락 색으로 표시합니다.</p>
-    <p>H는 후보 사진의 재투영 거리 4px, F는 두 방향 점-에피폴라선 거리의 최댓값 1px 기준입니다. 오차 정의가 달라 통과 수로 우열을 판단하지 않습니다. F는 평면·반복 요소에서도 잘못된 연결을 통과시킬 수 있습니다.</p>
-    <p>잘라내기는 영역·해상도·특징점 예산을 함께 바꿉니다. 대상 영역은 사람이 지정한 진단 조건이며 자동 검출 성능을 뜻하지 않습니다. 같은 물체와 같은 정확한 지점을 구분하세요.</p>
-    <div class="table-scroll"><table><caption>실제 모델 실행 결과 · 사람 검토 수는 표본 기준</caption><thead><tr><th>조건</th><th>연결</th><th>H 통과</th><th>F 통과</th><th>사람 검토</th></tr></thead><tbody>{rows}</tbody></table></div>{''.join(cards)}<p>모델 의견은 정답이 아닙니다. 사람 미검토는 null로 별도 보관합니다. 실제 촬영 위치 추론은 하지 않습니다.</p>
+    <title>{page_title}</title><style>body{{margin:0;background:#0c1321;color:#e7edf6;font:15px/1.6 system-ui}}main{{max-width:1160px;margin:auto;padding:24px}}article{{background:#141f30;border:1px solid #34445b;border-radius:12px;margin:24px 0;padding:20px}}.sample-panel{{width:100%;max-width:768px}}details{{margin:14px 0}}summary{{cursor:pointer}}table{{width:100%;border-collapse:collapse}}th,td{{border-bottom:1px solid #34445b;padding:8px;text-align:left}}.table-scroll{{overflow:auto}}.region-images{{display:grid;grid-template-columns:1fr 1fr;gap:12px}}.region-images img{{max-width:100%}}pre{{white-space:pre-wrap;overflow-wrap:anywhere}}{css}</style></head>
+    <body><main><h1>{page_title}</h1><p>실제 DISK + LightGlue 실행 · {api_status}</p>
+    <p>각 조건의 대응점과 최초 검출점을 표시합니다. 처음 검출한 점은 하늘색, 연결은 선택한 검증 방식의 통과·탈락 색으로 표시합니다.</p>
+    <p>{geometry_note}</p>
+    <p>잘라내기는 영역·해상도·특징점 예산을 함께 바꿉니다. 사람 지정 영역과 GPT 제안 영역은 진단 조건이며 정확한 물체 마스크나 정답을 뜻하지 않습니다. 같은 물체와 같은 정확한 지점을 구분하세요.</p>
+    {selection_info}<div class="table-scroll"><table><caption>실제 모델 실행 결과 · 사람 검토 수는 표본 기준</caption><thead><tr><th>조건</th><th>연결</th><th>H 통과</th>{f_header}{reference_header}<th>사람 검토</th></tr></thead><tbody>{rows}</tbody></table></div>{''.join(cards)}<p>모델 의견은 정답이 아닙니다. 사람 미검토는 null로 별도 보관합니다. 실제 촬영 위치 추론은 하지 않습니다.</p>
     </main><script type="application/json" id="match-data">{payload}</script><script>{script}</script></body></html>'''
 
 

@@ -62,7 +62,7 @@
     if (points0.length !== points1.length || mask.length !== points0.length) throw new Error("Invalid point arrays");
     const field = (name) => root.querySelector(`[data-control="${name}"]`);
     if (pair.geometryMasks) {
-      field("geometry-label").hidden = false;
+      field("geometry-label").hidden = pair.geometryMode === "homography-only";
       for (const option of field("geometry").options) {
         if (pair.geometryAvailable?.[option.value] === false) {
           option.disabled = true;

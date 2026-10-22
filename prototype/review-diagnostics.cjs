@@ -88,7 +88,7 @@ async function main() {
     writePrivate(path.join(archive,`${Date.now()}-${crypto.randomBytes(4).toString("hex")}.json`),record);
     output.calls.push(record);
     writePrivate(outputPath,output);
-    console.log(`GPT 보조 검토 ${output.calls.filter(call=>call.status==="completed").length}/${input.batches.length}조건 완료 · 실패 ${failed}건`);
+    console.log(`GPT 보조 검토 요청 ${output.calls.filter(call=>call.status==="completed").length}/${input.batches.length}회 완료 · 실패 ${failed}건`);
   }
   const render = spawnSync(path.join(root,".venv-pipeline/bin/python"),["prototype/diagnostics.py","render","--run",directory],{cwd:root,stdio:"ignore"});
   if (render.status!==0) throw new Error("Report rendering failed");

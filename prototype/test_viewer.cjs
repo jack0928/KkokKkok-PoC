@@ -9,6 +9,7 @@ const { pathToFileURL } = require("node:url");
 const args = process.argv.slice(2);
 const hubMode = args.includes("--hub");
 const diagnosticMode = args.includes("--diagnostic");
+const regionsMode = args.includes("--regions");
 const reviewPageMode = args.includes("--review-page");
 const report = path.resolve(args.find((arg) => !arg.startsWith("--")) ||
   (hubMode ? "private-data/pipeline/index.html" : "private-data/pipeline/latest-report.html"));
@@ -73,8 +74,34 @@ async function run() {
   await send("Network.setBlockedURLs", { urls: ["http://*", "https://*"] });
   await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1100, deviceScaleFactor: 1, mobile: false });
   await send("Page.navigate", { url: pathToFileURL(report).href });
+  if (regionsMode) {
+    await until(()=>evaluate("document.querySelectorAll('article[data-pair]').length > 0 && document.querySelectorAll('.match-viewer[data-ready=true]').length === document.querySelectorAll('article[data-pair]').length"));
+    assert.equal(await evaluate("document.querySelectorAll('.viewer-error:not([hidden])').length"),0);
+    assert(await evaluate("document.querySelector('h1').textContent.includes('GPT 영역 선택 비교')"));
+    assert(await evaluate("Array.from(document.querySelectorAll('[data-control=geometry-label]')).every(label=>label.hidden)"));
+    assert(await evaluate("!Array.from(document.querySelectorAll('th')).some(th=>th.textContent==='F 통과')"));
+    const value=await evaluate("JSON.parse(document.getElementById('match-data').textContent).pairs.map(p=>({image:p.queryImage,mode:p.geometryMode}))");
+    assert(value.every(p=>p.mode==='homography-only'));
+    assert.equal(value[0].image,value[1].image);
+    assert.notEqual(value[0].image,value[2].image);
+    assert(await evaluate("document.querySelectorAll('.region-overview').length > 0 && document.querySelector('.region-selection').textContent.includes('독립적인 정확도 검증이 아닙니다')"));
+    await evaluate("document.querySelector('.region-overview').open=true");
+    const initial=await evaluate("document.querySelector('canvas.overview').toDataURL()");
+    await act("c('detected').checked=true;c('detected').dispatchEvent(new Event('change'));return true;");
+    assert.notEqual(await evaluate("document.querySelector('canvas.overview').toDataURL()"),initial);
+    const expected=await evaluate("JSON.parse(document.getElementById('match-data').textContent).pairs.length*2");
+    assert.equal(await evaluate("document.querySelectorAll('details[id^=sample-]').length"),expected);
+    assert(await evaluate("document.body.textContent.includes('실제 GPT API 보조 검토 있음')"));
+    await send("Emulation.setDeviceMetricsOverride",{width:390,height:844,deviceScaleFactor:1,mobile:true});
+    assert(await evaluate("document.documentElement.scrollWidth <= window.innerWidth"));
+    assert.equal(exceptions.length,0);assert.equal(requests.filter(url=>/^https?:/.test(url)).length,0);
+    const capture=await send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
+    fs.writeFileSync(path.join(path.dirname(report),"region-experiment-mobile.png"),Buffer.from(capture.data,"base64"),{mode:0o600});
+    console.log("PASS: region proposal report, H-only controls, shared original-scale image, crop image, ROI boundaries, GPT samples, mobile layout and no external requests");
+    return;
+  }
   if (reviewPageMode) {
-    await until(()=>evaluate("document.querySelectorAll('.point-review-form').length === 20"));
+    await until(()=>evaluate("document.querySelectorAll('.point-review-form').length > 0"));
     assert.equal(await evaluate("document.querySelectorAll('iframe').length"),1);
     assert.equal(await evaluate("Array.from(document.querySelectorAll('.point-review-form button')).every(button=>button.disabled)"),true);
     await evaluate("document.querySelector('.human-sample').open=true");
