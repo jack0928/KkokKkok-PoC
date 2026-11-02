@@ -4,6 +4,10 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { DiscoveryRecord, RISK_DEFINITION, RecordSummary, RecordDetail } from "@/lib/discovery";
 import { deleteRecord, exportRecords, readSummaries, readRecord, readRecords } from "@/lib/storage";
+import { OcrDuplicate } from "./ocr-duplicate";
+import { GroundingReview } from "./grounding-review";
+import { FeatureRegions } from "./feature-regions";
+import { FusionReview } from "./fusion-review";
 import { LegacyRecords } from "./legacy-records";
 
 const appropriateness = { unreviewed: "미검토", appropriate: "적절", inappropriate: "부적절", uncertain: "판단 보류" };
@@ -59,7 +63,7 @@ export function DiscoveryResults() {
   }
 
   function state(record: RecordSummary) {
-    return record.hasAnalysis ? record.reviewStatus : record.job.status;
+    return ["queued","analyzing","failed"].includes(record.job.status) ? record.job.status : record.hasAnalysis ? record.reviewStatus : record.job.status;
   }
   const statusLabels: Record<string, string> = { queued: "분석 대기", analyzing: "분석 중", failed: "분석 실패", legacy: "기존 미완료 기록", unreviewed: "검토 전", in_progress: "검토 중", completed: "검토 완료" };
   const filtered = records.filter((record) => filter === "all" || state(record) === filter);
@@ -104,6 +108,8 @@ export function DiscoveryResults() {
               <strong>이미지 {record.image.imageId.slice(0, 8)}</strong>
               <span className="result-date">{new Date(record.updatedAt).toLocaleString("ko-KR")}</span>
               <p><span className={`status-badge status-${state(record)}`}>{statusLabels[state(record)]}</span></p><p>Feature {record.featureCount}개 · 검토 {reviewed}/{record.featureCount}</p>
+              {!!record.fusionCount && <p>OCR Fusion 단서 {record.fusionCount}개</p>}
+              {!!record.objectFusionCount && <p>객체 Fusion 단서 {record.objectFusionCount}개</p>}
               <p className="result-card-types">{record.featureTypes.join(" · ") || "작성된 Feature 없음"}</p>
               {record.model && <p className="result-card-model">{record.model}</p>}
               <span className="result-card-toggle"><span className="when-closed">상세 보기</span><span className="when-open">상세 닫기</span></span>
@@ -113,7 +119,7 @@ export function DiscoveryResults() {
             <p className="caption">카드는 작은 미리보기입니다. 검토 페이지에서 원본과 AI 입력 이미지를 확인할 수 있습니다.</p>{record.job.error && <p className="message error">{record.job.error}</p>}
             <div className="record-actions">
               {record.hasAnalysis && <Link className="button primary small" href={`/review/${record.recordId}`}>{record.reviewStatus === "completed" ? "검토 확인·수정" : record.reviewStatus === "in_progress" ? "검토 계속" : "사람 검토 시작"}</Link>}
-              {!record.hasAnalysis && record.job.status === "failed" && record.job.hasOriginal && <button className="button secondary small" onClick={() => retry(record.recordId)}>분석 재시도</button>}
+              {record.job.status === "failed" && record.job.hasOriginal && <button className="button secondary small" onClick={() => retry(record.recordId)}>분석 재시도</button>}
               {record.job.hasOriginal && <a className="button secondary small" href={`/api/discovery-images/${record.recordId}`} target="_blank" rel="noopener noreferrer">원본 보기</a>}
               <button type="button" className="button secondary small" disabled={!detail || loading || !!deletingId} onClick={() => detail && download([detail])}>이 기록 JSON Export</button><button type="button" className="button secondary small danger" disabled={loading || !!deletingId || record.job.status === "analyzing"} onClick={() => remove(record)} aria-label={`이미지 ${record.image.imageId.slice(0, 8)} 결과 삭제`}>{deletingId === record.recordId ? "삭제 중…" : "결과 삭제"}</button></div>
             {detailErrors[record.recordId] && <p role="alert">{detailErrors[record.recordId]}</p>}
@@ -124,12 +130,14 @@ export function DiscoveryResults() {
             </dl>
             {detail.analysis && detail.analysis.modelOutput.candidates.length === 0 && <p className="caption">모델 후보가 0개입니다. 위험이 없다는 뜻은 아닙니다.</p>}
             {detail.analysis && detail.analysis.modelOutput.limitations.length > 0 && <details className="limitations"><summary>VLM 관찰 한계</summary><ul>{detail.analysis.modelOutput.limitations.map((item, index) => <li key={index}>{item}</li>)}</ul></details>}
+            {detail.fusion && <FusionReview record={detail} />}
+              {detail.grounding && <GroundingReview record={detail}/>}
             {detail.humanReviews.map((review, index) => {
               const candidate = review.modelCandidateIndex === null ? undefined : detail.analysis?.modelOutput.candidates[review.modelCandidateIndex];
-              return <section className="result-cue" key={review.cueId}><h2>Feature {index + 1} · {candidate ? "모델 후보" : "사람이 직접 추가"}</h2><div className="result-comparison">
-                <div><h3>VLM 원본</h3>{candidate ? <><p><strong>분류:</strong> {candidate.featureType}</p><p><strong>관찰:</strong> {candidate.observedCue}</p><p><strong>영역:</strong> {candidate.regionDescription || "설명 없음"}</p><p><strong>modelRisk:</strong> {candidate.modelRisk}</p><p><strong>모델 이유:</strong> {candidate.modelReason}</p></> : <p>사람이 추가한 항목으로 모델 판단이 없습니다.</p>}</div>
+              return <OcrDuplicate cueKey={review.modelCandidateIndex===null?undefined:`gpt-${review.modelCandidateIndex}`} key={review.cueId} record={candidate ? detail : undefined} observation={candidate?.observedCue ?? ""}><section className="result-cue"><h2>Feature {index + 1} · {candidate ? "모델 후보" : "사람이 직접 추가"}</h2><div className="result-comparison">
+                <div>{review.modelCandidateIndex!==null&&<FeatureRegions record={detail} candidateIndex={review.modelCandidateIndex}/>}<h3>VLM 원본</h3>{candidate ? <><p><strong>분류:</strong> {candidate.featureType}</p><p><strong>관찰:</strong> {candidate.observedCue}</p><p><strong>영역:</strong> {candidate.regionDescription || "설명 없음"}</p><p><strong>modelRisk:</strong> {candidate.modelRisk}</p><p><strong>모델 이유:</strong> {candidate.modelReason}</p></> : <p>사람이 추가한 항목으로 모델 판단이 없습니다.</p>}</div>
                 <div><h3>Human Review</h3><p><strong>분류:</strong> {review.featureType || "미작성"}</p><p><strong>관찰:</strong> {review.observedCue || "미작성"}</p><p><strong>영역:</strong> {review.regionDescription || "미작성"}</p><p><strong>적절성:</strong> {appropriateness[review.appropriateness]}</p><p><strong>humanRisk:</strong> {review.humanRisk ?? (review.appropriateness === "inappropriate" || review.appropriateness === "uncertain" ? "미평가 · 선택 사항" : "미검토")}</p><p><strong>사람 이유:</strong> {review.humanReason || "미작성"}</p></div>
-              </div></section>;
+              </div></section></OcrDuplicate>;
             })}
             <section className="result-notes"><h2>실험 메모</h2><p>{detail.notes || "작성된 메모가 없습니다."}</p></section>
             {detail.analysis && <details className="result-raw"><summary>모델 원본 JSON 보기</summary><pre>{detail.analysis.rawOutputText}</pre></details>}</>}

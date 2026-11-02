@@ -24,3 +24,23 @@ PR 제목과 본문도 한글 중심으로 작성한다. 기술 용어·파일 �
 예: `feat: Feature Discovery 테스트 페이지 추가`, `fix: 잘못된 이미지 업로드 처리`.
 
 commitlint, Husky, GitHub Actions, Issue Template, Branch Protection은 현재 범위에서 제외한다.
+
+## 사용자 요청에 따른 OCR 연결 확장 (2026-10-27)
+
+- Experiment 1 검토 화면에서 PaddleOCR 문자·영역 추출, GPT 후보 연결 제안 및 사람의 연결 판단을 지원한다. Experiment 2나 실제 위치 추론은 추가하지 않는다.
+- GPT 원본과 OCR 원본, 사람 검토를 분리한다. OCR은 분석본 기준 정규화 좌표를 사용한다. 문자 일치는 공간 대응 확정이 아니다.
+- OCR Fusion 확장: 저장된 OCR 원문/좌표와 분석본을 GPT로 검토하여 유용한 문자 단서를 표시한다. bbox는 OCR에서 계산하고 사람 수정값은 별도 저장한다. 제외/보류 원문은 보존한다. 사람 검토값은 GPT 입력에 넣지 않는다.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+## This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->
+
+- 2026-10-28 사용자 승인: Grounding DINO 객체 탐지·GPT 검토·사람 검토 파일럿을 지원한다. 기존 VLM 후보와 OCR/객체 단서 카드에 근거가 있는 bbox를 표시한다. 좌표와 탐지 점수는 위치 위험도/정답이 아니며 탐지 원본·GPT 원본·사람 수정은 분리한다.
+
+- 2026-10-28 사용자 승인: Spring 연동 통합 검사 접수·조회 API를 지원한다. 사용자 입력 주소는 문맥으로만 보관하고 모델에 전송하거나 위치를 추론하지 않는다. 누적 점수·이력 비교 미구현 상태를 응답에 명시한다.

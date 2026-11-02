@@ -1,13 +1,17 @@
 "use client";
+import { OcrDuplicate } from "./ocr-duplicate";
+import { FeatureRegions } from "./feature-regions";
+import type { DiscoveryRecord } from "@/lib/discovery";
+
 
 import { FEATURE_SUGGESTIONS, HumanReview, ModelCandidate } from "@/lib/discovery";
 import { useState, useEffect, useRef } from "react";
 import { APPROPRIATENESS_LABELS, REASON_OPTIONS } from "@/lib/review-reasons";
 
-type Props = { review: HumanReview; candidate?: ModelCandidate; number: number; disabled: boolean;
+type Props = { record?:DiscoveryRecord; review: HumanReview; candidate?: ModelCandidate; number: number; disabled: boolean;
   onChange: (patch: Partial<HumanReview>) => void; onRemove: () => void };
 
-export function CueReview({ review, candidate, number, disabled, onChange, onRemove }: Props) {
+export function CueReview({ record, review, candidate, number, disabled, onChange, onRemove }: Props) {
   const id = review.cueId;
   const [editingObservation, setEditingObservation] = useState(review.source === "human" && (!review.featureType.trim() || !review.observedCue.trim()));
   const reasonInput = useRef<HTMLTextAreaElement>(null);
@@ -18,10 +22,11 @@ export function CueReview({ review, candidate, number, disabled, onChange, onRem
   useEffect(() => { if (directInput) reasonInput.current?.focus(); }, [directInput]);
 
   return (
-    <article className="cue-card" id={`cue-${id}`}>
+    <OcrDuplicate cueKey={review.modelCandidateIndex===null?undefined:`gpt-${review.modelCandidateIndex}`} record={candidate ? record : undefined} observation={candidate?.observedCue ?? ""}><article className="cue-card" id={`cue-${id}`}>
       <div className="cue-heading"><span className="cue-number">{String(number).padStart(2, "0")}</span><strong>{candidate ? "VLM Feature 후보" : "사람이 추가한 Feature"}</strong><span className={`pill ${candidate ? "" : "green"}`}>{candidate ? "MODEL" : "HUMAN"}</span>{!candidate && <button className="button ghost small" disabled={disabled} onClick={onRemove} type="button" aria-label={`Feature ${number} 삭제`}>삭제</button>}</div>
       {candidate && <details className="model-evidence model-disclosure"><summary>VLM 원본·위험도·이유 보기 <span className="subtle">사람 판단 후 비교</span></summary><div className="model-evidence-top"><span className="eyebrow">VLM 원본 · 보존됨</span><span className={`risk-badge ${candidate.modelRisk}`}>modelRisk: {candidate.modelRisk}</span></div><strong>{candidate.featureType}</strong><p>{candidate.observedCue}</p><p className="caption">영역: {candidate.regionDescription || "설명 없음"}</p><p className="model-reason">{candidate.modelReason}</p></details>}
 
+      {record && candidate && review.modelCandidateIndex!==null && <FeatureRegions record={record} candidateIndex={review.modelCandidateIndex}/>}
       <fieldset className="review-fields" disabled={disabled}>
         <legend>Human Review</legend>
         <div className="field-grid">
@@ -52,7 +57,7 @@ export function CueReview({ review, candidate, number, disabled, onChange, onRem
 
         </div>
       </fieldset>
-    </article>
+    </article></OcrDuplicate>
   );
 }
 

@@ -134,6 +134,9 @@ summary { cursor: pointer; }
 .saved-list { margin-top: 20px; display: grid; gap: 10px; }
 .saved-record { display: flex; justify-content: space-between; align-items: center; gap: 16px; background: #fff; border: 1px solid var(--line); padding: 15px 20px; border-radius: 3px; }
 .saved-record strong { font-size: 15px; }
+.image-gps { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
+.image-gps label { display: block; margin: 8px 0; }
+.image-gps input { width: 100%; min-width: 0; }
 .saved-record p { color: var(--muted); font-size: 13px; margin-top: 3px; }
 .saved-record > div:last-child { display: flex; gap: 8px; }
 .message { padding: 13px 18px; margin: 0 0 20px; border: 1px solid; border-radius: 4px; font-size: 14px; overflow-wrap: anywhere; }
@@ -304,3 +307,19 @@ input[type="file"]::file-selector-button { border: 1px solid #b7c1cd; background
 
 .reason-confirmation { background: #fff8e9; border: 1px solid #dfcd9f; padding: 10px; margin: 10px 0; font-size: 13px; }
 .reason-confirmation .button { margin-top: 8px; }
+
+/* OCR/GPT Fusion cards keep each cue and its image coordinates together. */
+.fusion-panel { margin-bottom: 24px; }
+.fusion-panel > p { margin: 12px 0; }
+.fusion-card h3 { font-size: 17px; overflow-wrap: anywhere; }
+.fusion-model-reason { margin: 12px 0; white-space: pre-wrap; }
+.fusion-image { margin: 14px 0; }
+.fusion-image > svg { display: block; height: auto; background: #f4f5f7; border: 1px solid var(--line); }
+.fusion-box-editor, .fusion-hidden { padding: 12px; border: 1px solid var(--line); background: #fff; margin: 12px 0; }
+.fusion-box-editor summary, .fusion-hidden summary { cursor: pointer; }
+.fusion-coordinates { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 8px; margin: 12px 0; }
+.fusion-coordinates input { width: 100%; }
+.fusion-human { border: 1px solid var(--line); padding: 14px; display: grid; gap: 12px; margin-top: 12px; }
+.fusion-human label { display: grid; gap: 6px; }
+.fusion-human input, .fusion-human textarea, .fusion-human select { width: 100%; }
+@media (max-width: 760px) { .fusion-coordinates { grid-template-columns: repeat(2,minmax(0,1fr)); } }

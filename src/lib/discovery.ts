@@ -1,8 +1,12 @@
+import { pipelineSchema, pipelineActive } from "./pipeline";
+import { groundingSchema, objectFusionSchema, makeObjectCues } from "./grounding";
 import { z } from "zod";
+import { ocrResultSchema, ocrReviewSchema } from "./ocr";
+import { fusionSchema, fusionReviewSchema, fusionAttemptSchema, makeFusionCues, fusionReviewComplete } from "./fusion";
 
 export const RISK_DEFINITION =
   "해당 Feature가 외부 정보와 결합되었을 때 실제 촬영 위치를 좁히거나 특정하는 데 얼마나 유용한가";
-export const PROMPT_VERSION = "feature-discovery-v1";
+export const PROMPT_VERSION = "feature-discovery-v2-nontext";
 export const STORAGE_KEY = "kkokkkok:feature-discovery:v1";
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 export const FEATURE_SUGGESTIONS = [
@@ -60,7 +64,7 @@ export const analysisSchema = z.object({
   responseModel: z.string().max(200),
   responseId: z.string().max(200),
   analyzedAt: z.string().datetime(),
-  promptVersion: z.literal(PROMPT_VERSION),
+  promptVersion: z.enum(["feature-discovery-v1", PROMPT_VERSION]),
   analysisSha256: z.string().regex(/^[a-f0-9]{64}$/),
   usage: z.object({ inputTokens: z.number(), outputTokens: z.number() }).nullable(),
   modelOutput: modelOutputSchema,
@@ -68,6 +72,17 @@ export const analysisSchema = z.object({
 }).strict();
 
 export const discoveryRecordSchema = z.object({
+  pipeline:pipelineSchema.optional(),
+  grounding: groundingSchema.optional(),
+  groundingAttempt: fusionAttemptSchema.optional(),
+  objectFusion: objectFusionSchema.optional(),
+  objectFusionAttempt: fusionAttemptSchema.optional(),
+  objectFusionReviews: z.array(fusionReviewSchema).max(120).optional(),
+  fusion: fusionSchema.optional(),
+  fusionReviews: z.array(fusionReviewSchema).max(120).optional(),
+  fusionAttempt: fusionAttemptSchema.optional(),
+  ocr: ocrResultSchema.optional(),
+  ocrReviews: z.array(ocrReviewSchema).max(500).optional(),
   schemaVersion: z.literal(1),
   experiment: z.literal("feature-discovery"),
   recordId: z.string().uuid(),
@@ -80,9 +95,53 @@ export const discoveryRecordSchema = z.object({
   notes: z.string().max(5000),
   reviewCompletedAt: z.string().datetime().nullable().default(null),
 }).strict().superRefine((record, context) => {
+  if(record.reviewCompletedAt&&pipelineActive(record.pipeline)) context.addIssue({code:"custom",message:"Pipeline still running"});
   if (record.reviewCompletedAt && (!record.analysis || record.humanReviews.some((item) => !isReviewWritten(item)))) {
     context.addIssue({ code: "custom", message: "Completed review requires an analysis and reviewed cues" });
   }
+  if(record.grounding && record.grounding.analysisSha256!==record.image.analysisSha256)
+    context.addIssue({code:"custom",message:"Grounding image mismatch"});
+  if(record.objectFusion) {
+    try {
+      if(!record.grounding || !record.analysis || record.objectFusion.analysisSha256!==record.image.analysisSha256) throw new Error();
+      const expected=makeObjectCues(record.objectFusion.modelOutput,record.grounding,record.analysis.modelOutput.candidates.length);
+      if(JSON.stringify(expected)!==JSON.stringify(record.objectFusion.cues)) throw new Error();
+    } catch {context.addIssue({code:"custom",message:"Invalid object Fusion evidence"});}
+  }
+  const objectIds=new Set(record.objectFusion?.cues.map(c=>c.cueId)??[]);
+  const objectReviewed=new Set<string>();
+  for(const r of record.objectFusionReviews??[]) {
+    if(!objectIds.has(r.cueId)||objectReviewed.has(r.cueId)) context.addIssue({code:"custom",message:"Invalid object review reference"});
+    objectReviewed.add(r.cueId);
+  }
+  if(record.reviewCompletedAt && (record.groundingAttempt?.status==="running" || record.objectFusionAttempt?.status==="running" ||
+      (record.grounding && !record.objectFusion) || (record.objectFusion && !fusionReviewComplete(record.objectFusion,record.objectFusionReviews??[]))))
+    context.addIssue({code:"custom",message:"Object review is incomplete"});
+  if (record.fusion) {
+    try {
+      if (!record.ocr || !record.analysis || record.fusion.analysisSha256 !== record.image.analysisSha256) throw new Error();
+      const expected = makeFusionCues(record.fusion.modelOutput, record.ocr, record.analysis.modelOutput.candidates.length);
+      if (JSON.stringify(expected) !== JSON.stringify(record.fusion.cues)) throw new Error();
+    } catch { context.addIssue({code:"custom",message:"Invalid Fusion evidence or boxes"}); }
+  }
+  const fusionIds = new Set(record.fusion?.cues.map(c=>c.cueId) ?? []);
+  const fusionReviewed = new Set<string>();
+  for (const review of record.fusionReviews ?? []) {
+    if (!fusionIds.has(review.cueId) || fusionReviewed.has(review.cueId)) context.addIssue({code:"custom",message:"Invalid Fusion review reference"});
+    fusionReviewed.add(review.cueId);
+  }
+  if (record.reviewCompletedAt && (record.fusionAttempt?.status === "running" || (record.fusion && !fusionReviewComplete(record.fusion, record.fusionReviews ?? []))))
+    context.addIssue({code:"custom",message:"Fusion review is incomplete"});
+  const ocrIds = new Set(record.ocr?.lines.map(line => line.id) ?? []);
+  const reviewedOcr = new Set<string>();
+  for (const review of record.ocrReviews ?? []) {
+    if (!ocrIds.has(review.lineId) || reviewedOcr.has(review.lineId)
+      || (review.status === "linked" ? review.candidateIndex === null || !record.analysis || review.candidateIndex >= record.analysis.modelOutput.candidates.length : review.candidateIndex !== null))
+      context.addIssue({code: "custom", message: "Invalid OCR review link"});
+    reviewedOcr.add(review.lineId);
+  }
+  if (record.reviewCompletedAt && record.ocr && !record.fusion && (reviewedOcr.size !== ocrIds.size || record.ocrReviews?.some(r => r.status === "unreviewed")))
+    context.addIssue({code: "custom", message: "OCR review is incomplete"});
   const indexes = new Set<number>();
   const ids = new Set<string>();
   for (const review of record.humanReviews) {
@@ -147,7 +206,7 @@ export function applyAnalysis(record: DiscoveryRecord, analysis: Analysis): Disc
 
 export function reviewStatus(record: DiscoveryRecord): "unreviewed" | "in_progress" | "completed" {
   if (record.reviewCompletedAt) return "completed";
-  return record.notes.trim() || record.humanReviews.some((item) => {
+  return record.notes.trim() || record.objectFusionReviews?.some(r=>r.status!=="unreviewed"||!!r.humanReason.trim()) || record.fusionReviews?.some(item => item.status !== "unreviewed" || !!item.humanReason.trim()) || record.ocrReviews?.some(item => item.status !== "unreviewed") || record.humanReviews.some((item) => {
     const candidate = item.modelCandidateIndex === null ? undefined : record.analysis?.modelOutput.candidates[item.modelCandidateIndex];
     return item.source === "human" || item.appropriateness !== "unreviewed" || item.humanRisk !== null || item.humanReason.trim()
       || (candidate && (item.featureType !== candidate.featureType || item.observedCue !== candidate.observedCue || item.regionDescription !== candidate.regionDescription));
@@ -168,12 +227,15 @@ export type JobInfo = z.infer<typeof jobInfoSchema>;
 
 
 export const recordSummarySchema = z.object({
+  pipeline:pipelineSchema.optional(),
   recordId: z.string().uuid(), image: imageDescriptorSchema,
   createdAt: z.string().datetime(), updatedAt: z.string().datetime(),
   hasAnalysis: z.boolean(), featureCount: z.number().int(), reviewedCount: z.number().int(),
   reviewStatus: z.enum(["unreviewed", "in_progress", "completed"]),
   featureTypes: z.array(z.string()), model: z.string().nullable(), job: jobInfoSchema,
   hasThumbnail: z.boolean(),
+  fusionCount: z.number().int().nonnegative().optional(),
+  objectFusionCount: z.number().int().nonnegative().optional(),
 });
 export const recordDetailSchema = z.object({
   record: discoveryRecordSchema, job: jobInfoSchema,

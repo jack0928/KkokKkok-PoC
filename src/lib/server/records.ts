@@ -77,7 +77,7 @@ export function persistRecord(input: DiscoveryRecord, expectedUpdatedAt: string 
     if ((existing?.updatedAt ?? null) !== expectedUpdatedAt) {
       throw new RecordConflict("다른 화면에서 기록이 변경되었거나 삭제되었습니다. 현재 내용을 JSON Export한 뒤 페이지를 새로고침해 주세요.");
     }
-    if (existing && (existing.createdAt !== record.createdAt || !isDeepStrictEqual(existing.image, record.image)
+    if (existing && (existing.createdAt !== record.createdAt || !isDeepStrictEqual(existing.pipeline,record.pipeline) || !isDeepStrictEqual(existing.grounding, record.grounding) || !isDeepStrictEqual(existing.groundingAttempt, record.groundingAttempt) || !isDeepStrictEqual(existing.objectFusion, record.objectFusion) || !isDeepStrictEqual(existing.objectFusionAttempt, record.objectFusionAttempt) || !isDeepStrictEqual(existing.fusion, record.fusion) || !isDeepStrictEqual(existing.fusionAttempt, record.fusionAttempt) || !isDeepStrictEqual(existing.ocr, record.ocr) || !isDeepStrictEqual(existing.image, record.image)
       || (existing.analysis !== null && !isDeepStrictEqual(existing.analysis, record.analysis)))) {
       throw new RecordConflict("이미지 정보와 저장된 모델 원본은 변경할 수 없습니다. 재분석은 새 실험으로 진행해 주세요.");
     }
@@ -99,6 +99,7 @@ export function removeRecord(id: string, expectedUpdatedAt: string): DiscoveryRe
         const job = db.prepare("SELECT job_status FROM discovery_records WHERE record_id = ?").get(id);
         if (job?.job_status === "analyzing") throw new RecordConflict("분석 중인 기록은 완료 후 삭제해 주세요.");
         const existing = findRecord(db, id);
+        if (existing?.fusionAttempt?.status === "running" || existing?.groundingAttempt?.status === "running" || existing?.objectFusionAttempt?.status === "running") throw new RecordConflict("GPT 검토 중입니다. 완료 또는 중단 상태 확인 후 삭제해 주세요.");
         if (!existing || existing.updatedAt !== expectedUpdatedAt) throw new RecordConflict("기록이 변경되었거나 삭제되었습니다. 페이지를 새로고침해 주세요.");
         const files = db.prepare("SELECT original_path, analysis_path FROM discovery_records WHERE record_id = ?").get(id);
         const paths = [files?.original_path, files?.analysis_path].filter((file): file is string => typeof file === "string" && existsSync(file));
@@ -127,8 +128,8 @@ export function removeRecord(id: string, expectedUpdatedAt: string): DiscoveryRe
 export function listSummaries() {
   return withDatabase((db) => allRecords(db).map((record) => {
     const row = db.prepare("SELECT job_status, job_error, original_path, thumbnail IS NOT NULL AS has_thumbnail FROM discovery_records WHERE record_id = ?").get(record.recordId)!;
-    return { recordId: record.recordId, image: record.image, createdAt: record.createdAt, updatedAt: record.updatedAt,
-      hasAnalysis: !!record.analysis, featureCount: record.humanReviews.length, reviewedCount: record.humanReviews.filter(isReviewWritten).length,
+    return { pipeline:record.pipeline, recordId: record.recordId, image: record.image, createdAt: record.createdAt, updatedAt: record.updatedAt,
+      hasAnalysis: !!record.analysis, objectFusionCount: record.objectFusion?.cues.filter(c => {const r=record.objectFusionReviews?.find(r=>r.cueId===c.cueId);return r?.status!=="rejected"&&(c.decision==="useful"||!!r);}).length ?? 0, fusionCount: record.fusion?.cues.filter(c => { const review = record.fusionReviews?.find(r => r.cueId === c.cueId); return review?.status !== "rejected" && (c.decision === "useful" || !!review); }).length ?? 0, featureCount: record.humanReviews.length, reviewedCount: record.humanReviews.filter(isReviewWritten).length,
       reviewStatus: reviewStatus(record), featureTypes: [...new Set(record.humanReviews.map((item) => item.featureType).filter(Boolean))].slice(0, 4),
       model: record.analysis?.responseModel ?? null, job: { status: row.job_status ?? "legacy", error: row.job_error ?? null, hasOriginal: !!row.original_path }, hasThumbnail: !!row.has_thumbnail };
   }));

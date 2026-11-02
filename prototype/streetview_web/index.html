@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>꼭꼭 · 거리뷰 비교 실험</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
+<body><main>
+<header><div class="eyebrow">KKOKKKOK / LOCAL EXPERIMENT</div><h1>사진과 거리의<br>시각적 연결을 확인하세요.</h1>
+<p class="intro">실내·외 거리뷰의 네 방향과 업로드 사진을 비교합니다.<br>유사도와 대응 근거를 확인하는 실험이며 촬영 장소·거주지를 확정하지 않습니다.</p></header>
+<div class="layout"><section class="panel input-panel" aria-labelledby="input-title"><div class="section-heading"><span class="number">01</span><h2 id="input-title">비교할 사진과 주소</h2></div>
+<form id="compare-form">
+<label class="field-label" for="photos">내 사진 <span>1~5장</span></label>
+<label class="upload" for="photos"><strong>사진을 선택하세요</strong><span>JPEG · PNG · WebP / 장당 10MB 이하</span><input id="photos" type="file" accept="image/jpeg,image/png,image/webp" multiple required></label>
+<div id="previews" class="previews" aria-live="polite"></div>
+<label class="field-label" for="reference-mode">거리뷰 선택 방법</label>
+<select id="reference-mode"><option value="address">주소로 검색</option><option value="panorama">특정 거리뷰 지정 · 실내 권장</option></select>
+<div id="address-fields"><label class="field-label" for="address">참조 주소</label><input id="address" type="text" maxlength="500" placeholder="비교할 거리뷰의 주소를 입력하세요" autocomplete="off" required>
+<label class="field-label" for="source">검색 대상</label><select id="source"><option value="default">실내 포함 · 전체</option><option value="outdoor">야외만</option></select>
+<p class="help">주소 검색은 원하는 실내·층을 보장하지 않습니다. 정확한 실내 사진은 특정 거리뷰로 지정하세요.</p></div>
+<div id="panorama-fields" hidden><label class="field-label" for="panorama">Google Maps 거리뷰 링크 또는 파노라마 ID</label>
+<textarea id="panorama" rows="3" maxlength="8192" placeholder="거리뷰 전체 링크 또는 파노라마 ID를 붙여넣으세요" disabled></textarea>
+<button id="campus-example" class="secondary" type="button">전달한 중앙대 310관 실내 거리뷰 선택</button>
+<p class="help">지정한 파노라마만 요청합니다. API에서 제공하지 않으면 다른 장소로 대체하지 않습니다.</p></div>
+<div class="directions"><span>0° 북</span><span>90° 동</span><span>180° 남</span><span>270° 서</span></div>
+<p class="help">같은 촬영 지점에서 네 방향을 봅니다. 다른 촬영 위치 네 곳을 찾는 기능은 아닙니다.</p>
+<label class="consent"><input id="consent" type="checkbox" required><span>참조 주소 또는 파노라마 ID가 Google로 전송되고 메타데이터 확인 후 이미지 4회 요청 비용이 발생할 수 있음을 확인했습니다. 업로드 사진은 로컬에서 분석합니다.</span></label>
+<button id="submit" type="submit" disabled>네 방향과 비교하기 <span>→</span></button>
+<p id="configuration" class="help" role="status">서버 설정을 확인하고 있습니다.</p>
+</form></section>
+<section class="panel status-panel" aria-labelledby="status-title"><div class="section-heading"><span class="number">02</span><h2 id="status-title">분석 진행</h2></div>
+<ol class="steps"><li>사진 검증·분석본 생성</li><li>파노라마 확인·네 방향 거리뷰 요청</li><li>DINOv2 검색 유사도 계산</li><li>DISK·LightGlue·기하 검증</li></ol>
+<p id="status" class="status" role="status" aria-live="polite">사진과 주소를 입력하면 시작할 수 있습니다.</p>
+<div class="note"><strong>결과를 읽는 기준</strong><p>검색 유사도는 같은 장소일 확률이 아닙니다. 초록 선은 기하 검증 통과점 중 최대 60개이며, 올바른 연결을 보장하지 않습니다.</p></div>
+<p class="help">이미지·벡터·결과는 영구 보고서로 저장하지 않습니다. 결과는 서버 메모리에 최대 5회 보관되며 서버 종료 시 사라집니다. 기존 8765 회차 목록에는 추가되지 않습니다.</p>
+</section></div>
+<section id="results" hidden aria-label="방향별 비교 결과"><div class="section-heading"><span class="number">03</span><h2>방향별 비교 결과</h2></div><p id="result-summary" class="intro"></p><div id="result-list"></div></section>
+<footer>비공개 로컬 실험 · GPT API 호출 없음 · Google Maps 콘텐츠는 제공된 출처 표시를 유지합니다.<br>
+<a href="https://developers.google.com/maps/documentation/streetview/policies" target="_blank" rel="noreferrer">Street View 사용 정책</a> · <a href="https://cloud.google.com/maps-platform/terms" target="_blank" rel="noreferrer">Google Maps 이용약관</a></footer>
+</main></body></html>

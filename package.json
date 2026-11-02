@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test:workflow": "node --conditions=react-server tests/local-workflow.cjs",
+    "test:gps": "node --conditions=react-server tests/image-gps.cjs",
     "pipeline:demo": ".venv-pipeline/bin/python prototype/pipeline.py demo",
     "pipeline:run": ".venv-pipeline/bin/python prototype/pipeline.py run",
     "pipeline:test": ".venv-pipeline/bin/python -m unittest discover -s prototype -p 'test_*.py'",
@@ -26,6 +27,7 @@
     "node": ">=22.13.0"
   },
   "dependencies": {
+    "exif-reader": "^2.0.3",
     "next": "16.4.0",
     "openai": "^7.30.0",
     "react": "^19.2.0",

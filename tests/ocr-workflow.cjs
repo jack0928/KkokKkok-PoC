@@ -1,0 +1,44 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+require("../scripts/register-server.cjs");
+const root = fs.mkdtempSync(path.join(os.tmpdir(), "kkok-ocr-"));
+process.env.SQLITE_PATH = path.join(root,"test.sqlite");
+const {ocrResultSchema, suggestCandidates} = require("../src/lib/ocr.ts");
+const d = require("../src/lib/discovery.ts");
+const records = require("../src/lib/server/records.ts");
+const result = {engine:"PaddleOCR",version:"test",coordinateSpace:"analysis-normalized",lines:[{id:"ocr-0",text:"카페 봄날",score:0.9,polygon:[[0,0],[0.5,0],[0.5,0.2],[0,0.2]]}]};
+const candidates = [{featureType:"sign",observedCue:"카페 봄날 간판",regionDescription:"위",modelRisk:"medium",modelReason:"test"}];
+assert.deepEqual(suggestCandidates("카페 봄날",candidates),[0]);
+assert.deepEqual(suggestCandidates("다른 간판",candidates),[]);
+assert.deepEqual(suggestCandidates("카",candidates),[]);
+assert.deepEqual(suggestCandidates("카페 봄날",[...candidates,...candidates]),[0,1]);
+assert.throws(()=>ocrResultSchema.parse({...result,lines:[...result.lines,...result.lines]}));
+assert.throws(()=>ocrResultSchema.parse({...result,lines:[{...result.lines[0],polygon:[[2,0],[0,0],[0,0],[0,0]]}]}));
+let record=d.newRecord({imageId:crypto.randomUUID(),originalSha256:"a".repeat(64),analysisSha256:"b".repeat(64),width:100,height:100,mimeType:"image/jpeg",preprocessing:"auto-rotate; max-edge=2048; jpeg-quality=95; metadata-stripped; white-background"});
+const analysis={requestedModel:"mock",responseModel:"mock",responseId:"mock",analyzedAt:new Date().toISOString(),promptVersion:d.PROMPT_VERSION,analysisSha256:record.image.analysisSha256,usage:null,modelOutput:{candidates,limitations:[]},rawOutputText:"mock"};
+record=d.applyAnalysis(record,analysis);
+assert(d.discoveryRecordSchema.safeParse(record).success); // Legacy record unchanged.
+record={...record,ocr:result,ocrReviews:[{lineId:"ocr-0",candidateIndex:null,status:"unreviewed"}]};
+records.persistRecord(record,null);
+record=records.recordDetail(record.recordId).record;
+const reviewed={...record,ocrReviews:[{lineId:"ocr-0",candidateIndex:0,status:"linked"}]};
+records.persistRecord(reviewed,record.updatedAt);
+assert.throws(()=>records.persistRecord(reviewed,record.updatedAt),records.RecordConflict);
+record=records.recordDetail(record.recordId).record;
+assert.throws(()=>records.persistRecord({...record,ocr:{...result,version:"tampered"}},record.updatedAt),records.RecordConflict);
+assert.throws(()=>records.persistRecord({...record,ocr:undefined,ocrReviews:undefined},record.updatedAt),records.RecordConflict);
+assert.throws(()=>d.discoveryRecordSchema.parse({...record,ocrReviews:[{lineId:"ocr-0",candidateIndex:99,status:"linked"}]}));
+assert.throws(()=>d.discoveryRecordSchema.parse({...record,ocrReviews:[{lineId:"missing",candidateIndex:null,status:"standalone"}]}));
+for(const status of ["standalone","excluded"]) assert(d.discoveryRecordSchema.safeParse({...record,ocrReviews:[{lineId:"ocr-0",candidateIndex:null,status}]}).success);
+const completed={...record,humanReviews:record.humanReviews.map(r=>({...r,appropriateness:"appropriate",humanRisk:"medium",humanReason:"test"})),reviewCompletedAt:new Date().toISOString()};
+assert(d.discoveryRecordSchema.safeParse(completed).success);
+assert(!d.discoveryRecordSchema.safeParse({...completed,ocrReviews:[]}).success);
+assert(!d.discoveryRecordSchema.safeParse({...completed,ocrReviews:[{lineId:"ocr-0",candidateIndex:null,status:"unreviewed"}]}).success);
+const {checkRequest}=require("../src/lib/server/access.ts");
+assert.throws(()=>checkRequest(new Request("http://localhost:3000",{headers:{host:"localhost:3000",origin:"https://evil.example"}})));
+fs.rmSync(root,{recursive:true,force:true});
+console.log("OCR schema, matching suggestions, legacy compatibility, immutable output, review validation, stale save and access tests passed.");
+

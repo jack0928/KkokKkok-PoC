@@ -1,9 +1,11 @@
+import { groundingRequestSchema } from "@/lib/grounding";
 import { z } from "zod";
 import { checkRequest } from "@/lib/server/access";
 import { MAX_IMAGE_BYTES } from "@/lib/discovery";
 import { InputError, readLimitedBody } from "@/lib/server/image";
 import { attachOriginal, enqueueImage, retryJob } from "@/lib/server/jobs";
 import { RecordConflict } from "@/lib/server/records";
+import { extractImageGps } from "@/lib/server/image-gps";
 
 export const runtime = "nodejs";
 export async function POST(request: Request) {
@@ -26,7 +28,13 @@ export async function POST(request: Request) {
     }
     const uploadId = request.headers.get("x-upload-id") ?? undefined;
     if (uploadId && !z.string().uuid().safeParse(uploadId).success) throw new InputError("업로드 ID가 올바르지 않습니다.");
-    return Response.json({ record: await enqueueImage(bytes, uploadId) }, { status: 202 });
+    let groundingOptions;
+    if(request.headers.get("x-parallel-analysis")==="true" && request.headers.has("x-detection-prompt")) {
+      let prompt;try{prompt=decodeURIComponent(request.headers.get("x-detection-prompt")!);}catch{throw new InputError("탐지 프롬프트 형식이 잘못되었습니다.");}
+      const options=groundingRequestSchema.safeParse({prompt});if(!options.success)throw new InputError("탐지 프롬프트는 3~400자여야 합니다.");groundingOptions=options.data;
+    }
+    const [record, gps] = await Promise.all([enqueueImage(bytes, uploadId, request.headers.get("x-parallel-analysis")==="true",groundingOptions), extractImageGps(bytes)]);
+    return Response.json({ record, gps }, { status: 202, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const status = error instanceof InputError ? error.status : error instanceof RecordConflict ? 409 : 500;
     return Response.json({ error: error instanceof InputError || error instanceof RecordConflict ? error.message : "이미지를 저장하지 못했습니다. 로컬 저장 경로와 권한을 확인해 주세요." }, { status });

@@ -1,14 +1,19 @@
 "use client";
 
+import { PipelineProgress } from "./pipeline-progress";
+import { GROUNDING_PROMPT, GROUNDING_PROMPTS } from "@/lib/grounding";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { MAX_IMAGE_BYTES, RecordSummary, JobInfo } from "@/lib/discovery";
 import { readSummaries } from "@/lib/storage";
 import { UploadPreview } from "./upload-preview";
+import { ImageGps } from "./image-gps";
+import { ImageGps as Gps, imageGpsSchema } from "@/lib/image-gps";
 
 const labels: Record<JobInfo["status"], string> = { queued: "분석 대기", analyzing: "분석 중", completed: "분석 완료 · 검토 가능", failed: "분석 실패", legacy: "기존 기록" };
 
 export function DiscoveryWorkspace() {
+  const [detectionPrompt,setDetectionPrompt]=useState(GROUNDING_PROMPT);
   const [files, setFiles] = useState<File[]>([]);
   const [consent, setConsent] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -17,6 +22,7 @@ export function DiscoveryWorkspace() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [failedFiles, setFailedFiles] = useState<File[]>([]);
+  const [uploadedGps, setUploadedGps] = useState<Record<string, Gps>>({});
   const uploadIds = useRef(new WeakMap<File, string>());
 
   useEffect(() => {
@@ -45,20 +51,22 @@ export function DiscoveryWorkspace() {
   }
 
   async function submit() {
-    if (!files.length || !consent || uploading) return;
+    if (!files.length || !consent || uploading || detectionPrompt.trim().length<3) return;
     setUploading(true); setError(""); setNotice("");
     const failed: File[] = [];
     let registered = 0;
     for (const file of files) {
       try {
-        const response = await fetch("/api/analysis-jobs", { method: "POST", headers: { "Content-Type": file.type, "X-Analysis-Consent": "true", "X-Upload-ID": uploadIds.current.get(file)! }, body: file });
+        const response = await fetch("/api/analysis-jobs", { method: "POST", headers: { "Content-Type": file.type, "X-Analysis-Consent": "true", "X-Parallel-Analysis":"true", "X-Detection-Prompt":encodeURIComponent(detectionPrompt), "X-Upload-ID": uploadIds.current.get(file)! }, body: file });
         const body = await response.json();
         if (!response.ok) throw new Error(body.error || "등록 실패");
+        const gps = imageGpsSchema.safeParse(body.gps);
+        if (gps.success) setUploadedGps((current) => ({ ...current, [body.record.recordId]: gps.data }));
         registered++;
       } catch { failed.push(file); }
     }
     setFiles(failed); setFailedFiles(failed); setUploading(false);
-    setNotice(`${registered}장을 분석 대기에 등록했습니다. 등록된 이미지는 페이지를 닫아도 로컬 작업 프로세스가 순차 분석합니다.`);
+    setNotice(`${registered}장을 분석 대기에 등록했습니다. 등록된 이미지는 페이지를 닫아도 로컬 작업 프로세스가 이미지별로 GPT·OCR·DINO를 병렬 실행하고 단서를 검토합니다.`);
     if (failed.length) setError(`${failed.length}장을 등록하지 못했습니다. 아래 파일을 확인하고 등록을 다시 시도해 주세요.`);
   }
 
@@ -78,13 +86,14 @@ export function DiscoveryWorkspace() {
     <section className="panel">
       <div className="panel-heading"><h2>분석할 이미지 선택</h2><span className="subtle">최대 20장 · 장당 10 MB</span></div>
       <label>JPEG·PNG·WebP 이미지<input type="file" multiple accept="image/jpeg,image/png,image/webp" disabled={uploading} onChange={(event) => { select(event.target.files); event.target.value = ""; }} /></label>
-      <p className="caption">선택만으로는 저장하거나 분석하지 않습니다. 요청 시 원본과 메타데이터를 제거한 분석본을 비공개 로컬 폴더에 보관합니다. AI에는 분석본만 전송합니다.</p>
+      <p className="caption">선택만으로는 저장하거나 분석하지 않습니다. 요청 시 원본과 메타데이터를 제거한 분석본을 비공개 로컬 폴더에 보관합니다. AI에는 분석본만 전송합니다. 원본 EXIF의 GPS는 업로드와 함께 별도로 읽어 아래에 표시합니다.</p>
       {!!files.length && <ul className="upload-files">{files.map((file, index) => <li key={`${file.name}-${file.lastModified}-${index}`}><UploadPreview file={file} /><div>{file.name} · {(file.size / 1024 / 1024).toFixed(1)} MB <button type="button" className="button ghost small" disabled={uploading} onClick={() => setFiles((current) => current.filter((_, position) => index !== position))}>선택 취소</button></div></li>)}</ul>}
-      <label className="checkbox-label"><input type="checkbox" checked={consent} disabled={uploading} onChange={(event) => setConsent(event.target.checked)} />사용 권한이 있는 이미지이며, 원본의 로컬 보관과 OpenAI 전송·API 비용 발생에 동의합니다.</label>
-      <button type="button" className="button primary" disabled={uploading || !consent || !files.length} onClick={submit}>{uploading ? "이미지 등록 중…" : failedFiles.length ? "등록 실패 이미지 다시 요청" : `선택 이미지 ${files.length}장 분석 시작`}</button>
+      <div className="panel"><strong>자동 DINO 탐색 목록</strong><div><button type="button" className="button secondary small" disabled={uploading} onClick={()=>setDetectionPrompt(GROUNDING_PROMPTS.indoor)}>실내</button><button type="button" className="button secondary small" disabled={uploading} onClick={()=>setDetectionPrompt(GROUNDING_PROMPTS.outdoor)}>실외</button></div><label>찾을 객체 (영어, 마침표로 구분)<textarea value={detectionPrompt} maxLength={400} rows={2} disabled={uploading} onChange={e=>setDetectionPrompt(e.target.value)}/></label><p className="caption">GPT·OCR·DINO가 함께 시작됩니다. 필요한 추출이 끝나면 OCR·객체 GPT 검토가 자동으로 이어집니다.</p></div>
+      <label className="checkbox-label"><input type="checkbox" checked={consent} disabled={uploading} onChange={(event) => setConsent(event.target.checked)} />사용 권한이 있는 이미지이며, 원본의 로컬 보관, GPT 개별 분석·OCR 단서 검토·객체 crop 검토를 위한 OpenAI 전송 및 이미지당 최대 3회 API 비용에 동의합니다.</label>
+      <button type="button" className="button primary" disabled={uploading || !consent || !files.length || detectionPrompt.trim().length<3} onClick={submit}>{uploading ? "이미지 등록 중…" : failedFiles.length ? "등록 실패 이미지 다시 요청" : `선택 이미지 ${files.length}장 분석 시작`}</button>
       <p className="caption">로컬 서버와 작업 프로세스가 켜져 있어야 합니다. 업로드가 끝날 때까지는 페이지를 열어두세요. 실패한 분석은 자동 재시도하지 않습니다.</p>
     </section>
     <div className="messages" aria-live="polite">{error && <p role="alert" className="message error">{error}</p>}{notice && <p className="message success">{notice}</p>}</div>
-    <section className="saved-section"><div className="panel-heading"><h2>분석 진행 상황</h2></div><div className="saved-list">{records.map((record) => <article className="saved-record" key={record.recordId}><div><strong>이미지 {record.image.imageId.slice(0, 8)}</strong><p><span className={`status-badge status-${record.hasAnalysis ? "unreviewed" : jobs[record.recordId]?.status ?? "legacy"}`}>{record.hasAnalysis ? "분석 완료 · 검토 가능" : labels[jobs[record.recordId]?.status ?? "legacy"]}</span></p>{jobs[record.recordId]?.error && <p>{jobs[record.recordId].error}</p>}</div>{record.hasAnalysis ? <Link className="button secondary small" href={`/review/${record.recordId}`}>사람 검토</Link> : jobs[record.recordId]?.status === "failed" && jobs[record.recordId]?.hasOriginal ? <button className="button secondary small" onClick={() => retry(record.recordId)}>분석 재시도</button> : null}</article>)}</div>{!records.length && <p className="caption">등록된 분석이 없습니다.</p>}</section>
+    <section className="saved-section"><div className="panel-heading"><h2>분석 진행 상황</h2></div><div className="saved-list">{records.map((record) => <article className="saved-record" key={record.recordId}><div><strong>이미지 {record.image.imageId.slice(0, 8)}</strong><p><span className={`status-badge status-${record.hasAnalysis ? "unreviewed" : jobs[record.recordId]?.status ?? "legacy"}`}>{labels[jobs[record.recordId]?.status ?? "legacy"]}</span></p>{jobs[record.recordId]?.error && <p>{jobs[record.recordId].error}</p>}<PipelineProgress pipeline={record.pipeline}/>{record.job.hasOriginal && <ImageGps recordId={record.recordId} initialGps={uploadedGps[record.recordId]} />}</div>{record.hasAnalysis && <Link className="button secondary small" href={`/review/${record.recordId}`}>사람 검토</Link>}{jobs[record.recordId]?.status === "failed" && jobs[record.recordId]?.hasOriginal ? <button className="button secondary small" onClick={() => retry(record.recordId)}>분석 재시도</button> : null}</article>)}</div>{!records.length && <p className="caption">등록된 분석이 없습니다.</p>}</section>
   </>;
 }

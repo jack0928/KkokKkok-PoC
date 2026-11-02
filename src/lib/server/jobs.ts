@@ -1,6 +1,8 @@
 import "server-only";
 import { mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { recoverParallelJobs, runParallelPipeline } from "./parallel-pipeline";
+import { newPipeline } from "../pipeline";
 import OpenAI from "openai";
 import { applyAnalysis, newRecord, DiscoveryRecord } from "../discovery";
 import { analyzeImage } from "./analyze";
@@ -9,7 +11,7 @@ import { allRecords, findRecord, RecordConflict, transaction, withDatabase } fro
 
 function imageRoot() { return resolve(process.env.IMAGE_STORAGE_PATH || "private-data/images"); }
 
-export async function enqueueImage(bytes: Buffer, requestId?: string): Promise<DiscoveryRecord> {
+export async function enqueueImage(bytes: Buffer, requestId?: string, parallel=false, groundingOptions?:import("../pipeline").Pipeline["groundingOptions"]): Promise<DiscoveryRecord> {
   if (requestId) {
     const existing = withDatabase((db) => findRecord(db, requestId));
     if (existing) {
@@ -19,6 +21,7 @@ export async function enqueueImage(bytes: Buffer, requestId?: string): Promise<D
   }
   const prepared = await prepareImage(bytes);
   const record = newRecord(prepared.image);
+  if(parallel) record.pipeline=newPipeline(groundingOptions);
   if (requestId) record.recordId = requestId;
   mkdirSync(imageRoot(), { recursive: true, mode: 0o700 });
   const originalPath = join(imageRoot(), `${record.recordId}.original`);
@@ -48,6 +51,7 @@ export async function enqueueImage(bytes: Buffer, requestId?: string): Promise<D
 }
 
 export function recoverInterruptedJobs() {
+  recoverParallelJobs();
   withDatabase((db) => db.prepare("UPDATE discovery_records SET job_status = 'failed', job_error = ? WHERE job_status = 'analyzing'")
     .run("로컬 작업 프로세스가 중단되었습니다. 비용이 발생했을 수 있으므로 확인 후 직접 재시도해 주세요."));
 }
@@ -56,7 +60,7 @@ export function retryJob(id: string) {
   return withDatabase((db) => transaction(db, () => {
     const row = db.prepare("SELECT job_status, analysis_path FROM discovery_records WHERE record_id = ?").get(id);
     const record = findRecord(db, id);
-    if (!record || record.analysis || !row?.analysis_path || row.job_status !== "failed") throw new RecordConflict("실패한 분석만 재시도할 수 있습니다.");
+    if (!record || (record.analysis && !record.pipeline) || !row?.analysis_path || row.job_status !== "failed") throw new RecordConflict("실패한 분석만 재시도할 수 있습니다.");
     db.prepare("UPDATE discovery_records SET job_status = 'queued', job_error = NULL WHERE record_id = ?").run(id);
     return allRecords(db);
   }));
@@ -70,6 +74,7 @@ export async function processNextJob(): Promise<boolean> {
     return { id: String(row.record_id), path: String(row.analysis_path), record: findRecord(db, String(row.record_id))! };
   }));
   if (!job) return false;
+  if(job.record.pipeline) { await runParallelPipeline(job.id); return true; }
   try {
     const bytes = readFileSync(job.path);
     if (sha256(bytes) !== job.record.image.analysisSha256) throw new Error("Invalid saved image");
