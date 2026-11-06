@@ -1,12 +1,14 @@
+import { assessmentSchema, assessmentInputSchema, decisionSchema, assertAssessment, SINGLE_RISK_DEFINITION } from "./single-cue-policy";
 import { pipelineSchema, pipelineActive } from "./pipeline";
 import { groundingSchema, objectFusionSchema, makeObjectCues } from "./grounding";
 import { z } from "zod";
 import { ocrResultSchema, ocrReviewSchema } from "./ocr";
 import { fusionSchema, fusionReviewSchema, fusionAttemptSchema, makeFusionCues, fusionReviewComplete } from "./fusion";
 
-export const RISK_DEFINITION =
+export const LEGACY_RISK_DEFINITION =
   "해당 Feature가 외부 정보와 결합되었을 때 실제 촬영 위치를 좁히거나 특정하는 데 얼마나 유용한가";
-export const PROMPT_VERSION = "feature-discovery-v2-nontext";
+export const RISK_DEFINITION = SINGLE_RISK_DEFINITION;
+export const PROMPT_VERSION = "feature-discovery-v4-keywords";
 export const STORAGE_KEY = "kkokkkok:feature-discovery:v1";
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 export const FEATURE_SUGGESTIONS = [
@@ -21,13 +23,23 @@ const reason = z.string().max(3000);
 // Open-ended featureType is intentional: this experiment discovers the taxonomy.
 export const modelOutputSchema = z.object({
   candidates: z.array(z.object({
+    detectionKeywords: z.array(z.string().min(1).max(60)).max(3).optional(),
     featureType: shortText,
     observedCue: observation,
     regionDescription: z.string().max(500),
-    modelRisk: riskSchema,
+    modelRisk: riskSchema.nullable(),
+    decision: decisionSchema.optional(),
+    assessment: assessmentSchema.optional(),
     modelReason: reason,
   }).strict()).max(40),
   limitations: z.array(z.string().max(1000)).max(10),
+}).strict();
+
+export const singleModelOutputSchema = z.object({
+  candidates: z.array(modelOutputSchema.shape.candidates.element.omit({modelRisk:true}).extend({
+    decision:decisionSchema, assessment:assessmentInputSchema, detectionKeywords:z.array(z.string().min(1).max(60)).max(3),
+  })).max(40),
+  limitations:modelOutputSchema.shape.limitations,
 }).strict();
 
 export const imageDescriptorSchema = z.object({
@@ -56,6 +68,7 @@ export const humanReviewSchema = z.object({
   appropriateness: z.enum(["unreviewed", "appropriate", "inappropriate", "uncertain"]),
   humanRisk: riskSchema.nullable(),
   humanReason: reason,
+  riskNotAssessed: z.boolean().optional(),
   reasonNeedsConfirmation: z.boolean().default(false),
 }).strict();
 
@@ -64,12 +77,17 @@ export const analysisSchema = z.object({
   responseModel: z.string().max(200),
   responseId: z.string().max(200),
   analyzedAt: z.string().datetime(),
-  promptVersion: z.enum(["feature-discovery-v1", PROMPT_VERSION]),
+  promptVersion: z.enum(["feature-discovery-v1", "feature-discovery-v2-nontext", "feature-discovery-v3-single", PROMPT_VERSION]),
   analysisSha256: z.string().regex(/^[a-f0-9]{64}$/),
   usage: z.object({ inputTokens: z.number(), outputTokens: z.number() }).nullable(),
   modelOutput: modelOutputSchema,
   rawOutputText: z.string().max(300000),
-}).strict();
+}).strict().superRefine((analysis, context) => {
+  for (const cue of analysis.modelOutput.candidates) {
+    if (analysis.promptVersion === PROMPT_VERSION && !cue.assessment) context.addIssue({code:"custom",message:"New analysis requires a single-cue assessment"});
+    try { assertAssessment(cue); } catch { context.addIssue({code:"custom",message:"Invalid single-cue grade"}); }
+  }
+});
 
 export const discoveryRecordSchema = z.object({
   pipeline:pipelineSchema.optional(),
@@ -88,13 +106,19 @@ export const discoveryRecordSchema = z.object({
   recordId: z.string().uuid(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
-  riskDefinition: z.literal(RISK_DEFINITION),
+  riskDefinition: z.enum([LEGACY_RISK_DEFINITION, RISK_DEFINITION]),
   image: imageDescriptorSchema,
   analysis: analysisSchema.nullable(),
   humanReviews: z.array(humanReviewSchema).max(100),
   notes: z.string().max(5000),
   reviewCompletedAt: z.string().datetime().nullable().default(null),
 }).strict().superRefine((record, context) => {
+  for (const cue of record.analysis?.modelOutput.candidates ?? []) {
+    try { assertAssessment(cue); } catch { context.addIssue({code:"custom",message:"Invalid single-cue assessment"}); }
+  }
+  for (const result of [record.fusion, record.objectFusion]) {
+    if (result?.promptVersion.endsWith("-single") && result.modelOutput.groups.some(cue => !cue.assessment)) context.addIssue({code:"custom",message:"New fusion requires a single-cue assessment"});
+  }
   if(record.reviewCompletedAt&&pipelineActive(record.pipeline)) context.addIssue({code:"custom",message:"Pipeline still running"});
   if (record.reviewCompletedAt && (!record.analysis || record.humanReviews.some((item) => !isReviewWritten(item)))) {
     context.addIssue({ code: "custom", message: "Completed review requires an analysis and reviewed cues" });
@@ -172,7 +196,7 @@ export type PreparedImage = z.infer<typeof preparedImageSchema>;
 export type Analysis = z.infer<typeof analysisSchema>;
 
 export function isReviewWritten(item: HumanReview): boolean {
-  return !!item.featureType.trim() && !!item.observedCue.trim() && !item.reasonNeedsConfirmation && item.appropriateness !== "unreviewed" && !!item.humanReason.trim() && (item.humanRisk !== null || item.appropriateness !== "appropriate");
+  return !!item.featureType.trim() && !!item.observedCue.trim() && !item.reasonNeedsConfirmation && item.appropriateness !== "unreviewed" && !!item.humanReason.trim() && (item.humanRisk !== null || item.riskNotAssessed === true || item.appropriateness !== "appropriate");
 }
 
 export function newRecord(image: PreparedImage["image"]): DiscoveryRecord {

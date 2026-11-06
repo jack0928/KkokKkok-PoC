@@ -16,7 +16,7 @@ class FakeOpenAI {
   this.responses={parse:async request=>{
    calls++;captured=request;await onCall();
    if(mode==="failure")throw new Error("mock API failure");
-   const parsed=structuredClone(output);
+   const parsed={groups:output.groups.map((g,i)=>({...Object.fromEntries(Object.entries(g).filter(([key])=>key!=="modelRisk")),assessment:{ruleId:["branch_identifier","irrelevant","partial_identifier"][i],certainty:i===2?"partial":"clear",evidence:g.interpretation,limitation:"실제 장소 미검증"}}))};
    if(mode==="missing")parsed.groups.pop();
    return {status:mode==="incomplete"?"incomplete":"completed",output_parsed:parsed,model:"mock-gpt",id:"response-mock",usage:{input_tokens:10,output_tokens:20},output_text:JSON.stringify(parsed)};
   }};

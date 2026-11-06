@@ -48,12 +48,22 @@ def main():
             if bbox[2] <= bbox[0] or bbox[3] <= bbox[1] or not str(label).strip():
                 continue
             detections.append({"id":f"dino-{len(detections)}", "label":str(label), "score":float(score), "bbox":bbox})
+        # Conservative same-label NMS; retain suppressed raw proposals for audit.
+        kept, duplicates = [], []
+        def iou(a, b):
+            intersection = max(0, min(a[2], b[2])-max(a[0], b[0])) * max(0, min(a[3], b[3])-max(a[1], b[1]))
+            union = (a[2]-a[0])*(a[3]-a[1]) + (b[2]-b[0])*(b[3]-b[1]) - intersection
+            return intersection / union if union else 0
+        for detection in sorted(detections, key=lambda d: d["score"], reverse=True):
+            duplicate = any(d["label"].strip().lower() == detection["label"].strip().lower() and iou(d["bbox"], detection["bbox"]) >= 0.85 for d in kept)
+            (duplicates if duplicate else kept).append(detection)
+        detections = kept
         output = {"engine":"Grounding DINO", "schemaVersion":1, "model":model_id,
                   "revision":model.config._commit_hash or "unknown", "transformersVersion":transformers.__version__,
                   "device":device, "prompt":prompt, "boxThreshold":box_threshold, "textThreshold":text_threshold,
                   "coordinateSpace":"analysis-normalized", "analysisSha256":hashlib.sha256(data).hexdigest(),
                   "analyzedAt":datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-                  "elapsedMs":round((time.monotonic()-started)*1000), "detections":detections}
+                  "elapsedMs":round((time.monotonic()-started)*1000), "detections":detections, "duplicateDetections":duplicates}
     print(json.dumps(output, ensure_ascii=False))
 
 

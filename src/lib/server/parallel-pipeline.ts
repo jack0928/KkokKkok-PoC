@@ -36,7 +36,7 @@ export async function runParallelPipeline(id:string){
     const bytes=storedImage(id,"analysis");if(!bytes)throw new Error("Missing analysis image");
     const initial=read(id);
     const gpt=stage("gpt",async()=>{const result=await analyzeImage({image:initial.image,dataUrl:`data:image/jpeg;base64,${bytes.toString("base64")}`});update(id,r=>r.analysis?r:applyAnalysis(r,result));});
-    const ocr=stage("ocr",async()=>{const result=await runOcr(bytes);update(id,r=>({...r,ocr:result,ocrReviews:result.lines.map(line=>({lineId:line.id,candidateIndex:null,status:"unreviewed" as const}))}));});
+    const ocr=stage("ocr",async()=>{const result=await runOcr(bytes,storedImage(id,"original")??undefined);update(id,r=>({...r,ocr:result,ocrReviews:result.lines.map(line=>({lineId:line.id,candidateIndex:null,status:"unreviewed" as const}))}));});
     const grounding=stage("grounding",async()=>{const options=initial.pipeline?.groundingOptions;const result=await runGrounding(bytes,options?.prompt??GROUNDING_PROMPT,options?.boxThreshold??0.3,options?.textThreshold??0.25);update(id,r=>({...r,grounding:result}));});
     const fusion=Promise.all([gpt,ocr]).then(async ok=>{if(!ok.every(Boolean)){status(id,"fusion","skipped","GPT 개별 분석과 OCR 추출이 필요합니다.");return;}await stage("fusion",async()=>{const r=read(id);await analyzeRecordFusion(id,r.updatedAt);});});
     const objects=Promise.all([gpt,grounding]).then(async ok=>{if(!ok.every(Boolean)){status(id,"objects","skipped","GPT 개별 분석과 객체 탐지가 필요합니다.");return;}await stage("objects",async()=>{const r=read(id);await analyzeRecordObjectFusion(id,r.updatedAt);});});

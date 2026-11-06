@@ -1,5 +1,6 @@
 "use client";
 
+import { CueAssessment } from "./cue-assessment";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { DiscoveryRecord, RISK_DEFINITION, RecordSummary, RecordDetail } from "@/lib/discovery";
@@ -7,6 +8,7 @@ import { deleteRecord, exportRecords, readSummaries, readRecord, readRecords } f
 import { OcrDuplicate } from "./ocr-duplicate";
 import { GroundingReview } from "./grounding-review";
 import { FeatureRegions } from "./feature-regions";
+import { EvidenceOverview } from "./evidence-overview";
 import { FusionReview } from "./fusion-review";
 import { LegacyRecords } from "./legacy-records";
 
@@ -81,7 +83,7 @@ export function DiscoveryResults() {
   return (
     <>
       <div className="page-heading"><div><h1>테스트 결과</h1><p>로컬 DB에 저장한 Feature Discovery 결과를 확인합니다.</p></div><Link className="button secondary" href="/feature-discovery">새 테스트 진행</Link></div>
-      <p className="results-note">VLM 후보와 Human Review는 별도 기록입니다. Risk Level: {RISK_DEFINITION}. 원본·분석본은 비공개 로컬 폴더에 보관합니다. JSON Export에는 이미지를 포함하지 않습니다.</p>
+      <p className="results-note">VLM 후보와 Human Review는 별도 기록입니다. 새 분석 기준: {RISK_DEFINITION}. 이전 기록의 등급은 당시 기준으로 보존됩니다. 원본·분석본은 비공개 로컬 폴더에 보관합니다. JSON Export에는 이미지를 포함하지 않습니다.</p>
       <div className="results-toolbar"><label>진행 상태 <select value={filter} onChange={(event) => setFilter(event.target.value)}><option value="all">전체 · {records.length}개</option>{Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><div className="record-actions"><button type="button" className="button secondary small" disabled={loading || !!deletingId} onClick={refresh}>새로고침</button><button type="button" className="button secondary small" disabled={loading || !!deletingId || !records.length} onClick={async () => { try { download(await readRecords()); } catch { setError("Export할 기록을 읽지 못했습니다."); } }}>전체 JSON Export</button></div></div>
       <LegacyRecords onMigrated={refresh} />
       <div aria-live="polite">{loading && <p className="message loading">결과를 불러오고 있습니다…</p>}{error && <p className="message error" role="alert">{error}</p>}{notice && <p className="message success">{notice}</p>}</div>
@@ -130,12 +132,12 @@ export function DiscoveryResults() {
             </dl>
             {detail.analysis && detail.analysis.modelOutput.candidates.length === 0 && <p className="caption">모델 후보가 0개입니다. 위험이 없다는 뜻은 아닙니다.</p>}
             {detail.analysis && detail.analysis.modelOutput.limitations.length > 0 && <details className="limitations"><summary>VLM 관찰 한계</summary><ul>{detail.analysis.modelOutput.limitations.map((item, index) => <li key={index}>{item}</li>)}</ul></details>}
-            {detail.fusion && <FusionReview record={detail} />}
+            <EvidenceOverview record={detail}/>{detail.fusion && <FusionReview record={detail} />}
               {detail.grounding && <GroundingReview record={detail}/>}
             {detail.humanReviews.map((review, index) => {
               const candidate = review.modelCandidateIndex === null ? undefined : detail.analysis?.modelOutput.candidates[review.modelCandidateIndex];
               return <OcrDuplicate cueKey={review.modelCandidateIndex===null?undefined:`gpt-${review.modelCandidateIndex}`} key={review.cueId} record={candidate ? detail : undefined} observation={candidate?.observedCue ?? ""}><section className="result-cue"><h2>Feature {index + 1} · {candidate ? "모델 후보" : "사람이 직접 추가"}</h2><div className="result-comparison">
-                <div>{review.modelCandidateIndex!==null&&<FeatureRegions record={detail} candidateIndex={review.modelCandidateIndex}/>}<h3>VLM 원본</h3>{candidate ? <><p><strong>분류:</strong> {candidate.featureType}</p><p><strong>관찰:</strong> {candidate.observedCue}</p><p><strong>영역:</strong> {candidate.regionDescription || "설명 없음"}</p><p><strong>modelRisk:</strong> {candidate.modelRisk}</p><p><strong>모델 이유:</strong> {candidate.modelReason}</p></> : <p>사람이 추가한 항목으로 모델 판단이 없습니다.</p>}</div>
+                <div>{review.modelCandidateIndex!==null&&<FeatureRegions record={detail} candidateIndex={review.modelCandidateIndex}/>}<h3>VLM 원본</h3>{candidate ? <><p><strong>분류:</strong> {candidate.featureType}</p><p><strong>관찰:</strong> {candidate.observedCue}</p><p><strong>영역:</strong> {candidate.regionDescription || "설명 없음"}</p><CueAssessment assessment={candidate.assessment} risk={candidate.modelRisk}/><p><strong>모델 이유:</strong> {candidate.modelReason}</p></> : <p>사람이 추가한 항목으로 모델 판단이 없습니다.</p>}</div>
                 <div><h3>Human Review</h3><p><strong>분류:</strong> {review.featureType || "미작성"}</p><p><strong>관찰:</strong> {review.observedCue || "미작성"}</p><p><strong>영역:</strong> {review.regionDescription || "미작성"}</p><p><strong>적절성:</strong> {appropriateness[review.appropriateness]}</p><p><strong>humanRisk:</strong> {review.humanRisk ?? (review.appropriateness === "inappropriate" || review.appropriateness === "uncertain" ? "미평가 · 선택 사항" : "미검토")}</p><p><strong>사람 이유:</strong> {review.humanReason || "미작성"}</p></div>
               </div></section></OcrDuplicate>;
             })}
@@ -148,3 +150,4 @@ export function DiscoveryResults() {
     </>
   );
 }
+

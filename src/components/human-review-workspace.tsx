@@ -11,6 +11,7 @@ import { CueReview, FeatureTypeSuggestions } from "./cue-review";
 import { ReviewSaveQueue } from "@/lib/review-save-queue";
 import { ReviewGuide } from "./review-guide";
 import { GroundingReview } from "./grounding-review";
+import { EvidenceOverview } from "./evidence-overview";
 import { FusionReview } from "./fusion-review";
 import { fusionReviewComplete } from "@/lib/fusion";
 import { OcrReview } from "./ocr-review";
@@ -233,7 +234,7 @@ export function HumanReviewWorkspace({ recordId }: { recordId: string }) {
       <section><div className="review-heading"><h2>이미지 {record.image.imageId.slice(0, 8)} · 후보 {record.humanReviews.length}개</h2><span className={`status-badge status-${reviewStatus(record)}`}>{record.reviewCompletedAt ? "검토 완료" : dirty ? "자동 저장 대기" : reviewStatus(record) === "unreviewed" ? "검토 전" : "검토 중"}</span></div>
         {ocrRunning && <p role="status">로컬 OCR 실행 중… 이 페이지에서 기다려 주세요. 최대 5분 후 시간 초과로 처리합니다.</p>}
         {(fusionRunning || record.fusionAttempt?.status === "running") && <p role="status">GPT가 OCR 문자와 이미지 맥락을 검토하고 있습니다. 페이지를 다시 열면 진행 상태를 확인합니다.</p>}
-        <FusionReview record={record} disabled={locked || finishing || attaching || (!record.fusion && (dirty || saving || !hasOriginal))} running={fusionRunning || record.fusionAttempt?.status === "running"} onRun={runFusion} onChange={reviews => change({...record, fusionReviews: reviews})}/>
+        <EvidenceOverview record={record}/><FusionReview record={record} disabled={locked || finishing || attaching || (!record.fusion && (dirty || saving || !hasOriginal))} running={fusionRunning || record.fusionAttempt?.status === "running"} onRun={runFusion} onChange={reviews => change({...record, fusionReviews: reviews})}/>
         {objectRunning&&<p role="status">Grounding DINO / GPT 처리 중… 로컬 탐지는 최대 10분이 걸릴 수 있습니다.</p>}
         <PipelineProgress pipeline={record.pipeline}/>
         <GroundingReview record={record} disabled={locked||finishing||attaching} actionsDisabled={dirty||saving||!hasOriginal} onDetect={(prompt,boxThreshold,textThreshold)=>runObjectStep("detect",prompt,boxThreshold,textThreshold)} onReview={()=>runObjectStep("review")} onChange={reviews=>change({...record,objectFusionReviews:reviews})}/>
@@ -251,3 +252,4 @@ export function HumanReviewWorkspace({ recordId }: { recordId: string }) {
     </div>}
   </>;
 }
+

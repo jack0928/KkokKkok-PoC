@@ -1,8 +1,9 @@
 "use client";
+import { CueAssessment } from "./cue-assessment";
 import { OcrDuplicate } from "./ocr-duplicate";
 import { useRef, useState } from "react";
 import type { DiscoveryRecord } from "@/lib/discovery";
-import { bboxSchema, Bbox, FusionCue, FusionReview as Review, newFusionReview } from "@/lib/fusion";
+import { bboxSchema, boundsForLines, Bbox, FusionCue, FusionReview as Review, newFusionReview } from "@/lib/fusion";
 
 export function CueImage({record,bbox,originalBox,editable,onChange,label}: {record:DiscoveryRecord;bbox:Bbox;originalBox:Bbox;editable:boolean;onChange:(box:Bbox)=>void;label:string}) {
   const [editing,setEditing]=useState(false);
@@ -41,19 +42,20 @@ export function FusionCard({record,cue,review,disabled,onChange,evidence,sourceL
   const editable=!!onChange&&!disabled;
   return <OcrDuplicate cueKey={cue.cueId} record={cue.cueId.startsWith("object-") ? record : undefined} observation={cue.interpretation}><article className="cue-card fusion-card" id={`fusion-cue-${cue.cueId}`}>
     <div className="cue-heading"><span className="pill">{sourceLabel}</span><strong>VLM Feature 후보</strong><h3>{review.observedCue||cue.interpretation}</h3></div>
+    <CueAssessment assessment={cue.assessment} risk={cue.modelRisk}/>
     <p className="fusion-model-reason">{cue.reason}</p>
     {cue.uncertainty&&<p className="caption">불확실성: {cue.uncertainty}</p>}
     <CueImage record={record} bbox={review.bbox} originalBox={cue.bbox} editable={editable} onChange={bbox=>onChange?.({...review,bbox,status:"unreviewed"})} label={`Fusion 단서 ${cue.cueId} 위치`}/>
     <details className="model-evidence"><summary>탐지 원문·GPT 판단·출처 보기</summary>
       <ul>{evidence?.map((text,i)=><li key={i}>{text}</li>)}{rawLines.map(line=><li key={line.id}>{line.id}: {line.text} (OCR 인식 점수 {line.score.toFixed(3)})</li>)}</ul>
-      <p>GPT 해석: {cue.interpretation}</p><p>GPT 분류: {cue.category} · 제안 위험도: {cue.modelRisk??"판단 보류"}</p>
+      <p>GPT 해석: {cue.interpretation}</p><p>GPT 분류: {cue.category} · 개별 등급 (새 기준은 서버 규칙): {cue.modelRisk??"판단 보류"}</p>
       <p>기존 GPT 후보 연결 제안: {cue.relatedCandidateIndexes.length?cue.relatedCandidateIndexes.map(i=>`#${i+1}`).join(", "):"없음 · 탐지에서 새로 발견한 단서"}</p>
       <p className="caption">좌표 출처: {sourceLabel}의 탐지 원본 경계 사각형. 사람의 영역 수정은 원본과 따로 저장합니다.</p>
     </details>
     {onChange?<fieldset disabled={disabled} className="fusion-human"><legend>사람 검토</legend>
       <label>단서 분류<input value={review.featureType} maxLength={120} onChange={e=>onChange({...review,featureType:e.target.value})}/></label>
       <label>단서 내용<textarea value={review.observedCue} maxLength={2000} rows={2} onChange={e=>onChange({...review,observedCue:e.target.value})}/></label>
-      <label>사람의 위험도<select value={review.humanRisk??""} onChange={e=>onChange({...review,humanRisk:(e.target.value||null) as Review["humanRisk"]})}><option value="">미검토</option><option value="low">low</option><option value="medium">medium</option><option value="high">high</option></select></label>
+      <label>사람의 위험도<select value={review.riskNotAssessed?"not_assessed":review.humanRisk??""} onChange={e=>onChange({...review,riskNotAssessed:e.target.value==="not_assessed",humanRisk:(e.target.value==="not_assessed"?null:e.target.value||null) as Review["humanRisk"]})}><option value="">미검토</option><option value="not_assessed">평가 보류 · 이유 기록</option><option value="low">low</option><option value="medium">medium</option><option value="high">high</option></select></label>
       <label>사람의 판단 이유<textarea value={review.humanReason} maxLength={3000} rows={2} onChange={e=>onChange({...review,humanReason:e.target.value})}/></label>
       <label>단서 유지 여부<select value={review.status} onChange={e=>onChange({...review,status:e.target.value as Review["status"]})}><option value="unreviewed">미검토</option><option value="accepted">유용한 단서로 유지</option><option value="rejected" disabled={!review.humanReason.trim()}>제외 (이유를 먼저 작성)</option></select></label>
     </fieldset>:<p>사람 판단: {review.status==="accepted"?"유지":review.status==="rejected"?"제외":"미검토"} · 위험도: {review.humanRisk??"미검토"} · 이유: {review.humanReason||"미작성"}</p>}
@@ -65,14 +67,14 @@ export function FusionReview({record,disabled=false,running=false,onChange,onRun
   const fusion=record.fusion;
   const reviews=record.fusionReviews??[];
   function save(review:Review) {onChange?.([...reviews.filter(r=>r.cueId!==review.cueId),review]);}
-  const visible=fusion?.cues.filter(cue=>{const r=reviews.find(r=>r.cueId===cue.cueId);return r?.status!=="rejected"&&(cue.decision==="useful"||!!r);})??[];
+  const visible=fusion?.cues.filter(cue=>{const r=reviews.find(r=>r.cueId===cue.cueId);return r?.status!=="rejected"&&(cue.decision==="useful"||(cue.assessment && cue.decision==="uncertain")||!!r);})??[];
   const hidden=fusion?.cues.filter(cue=>!visible.some(v=>v.cueId===cue.cueId))??[];
   return <section className="fusion-panel" aria-label="Fusion 단서">
     <h2>Fusion 단서 {fusion?`· ${visible.length}개`:""}</h2>
-    <p>OCR에서 읽은 글자와 위치를 GPT가 이미지 맥락과 함께 검토합니다. 유용하다고 제안한 단서가 여기에 표시됩니다.</p>
+    <p>OCR에서 읽은 글자와 위치를 GPT가 이미지 맥락과 함께 검토합니다. 직접 단서는 위험 정보를, 간접 단서는 누적 분석용 안내를 표시합니다. 판단 보류와 원문도 보존합니다.</p>
     {!fusion&&onRun&&<div className="panel">
       {!record.ocr?<p>먼저 아래에서 로컬 OCR을 실행해 주세요.</p>:<>
-        <p>저장된 OCR {record.ocr.lines.length}개를 검토합니다. 유용한 단서로 묶거나 제외·판단 보류 이유를 기록합니다.</p>
+        <p>저장된 OCR {record.ocr.lines.length}개를 검토합니다. 직접·간접 단서로 정리하고 제외·판단 보류 이유를 기록합니다.</p>
         <label className="checkbox-label"><input type="checkbox" checked={consent} disabled={disabled||running} onChange={e=>setConsent(e.target.checked)}/>분석본·OCR 원문과 좌표·기존 GPT 관찰의 OpenAI 전송 및 추가 API 비용 발생에 동의합니다.</label>
         <button className="button primary" disabled={disabled||running||!consent} onClick={onRun}>{running?"GPT 검토 중…":record.fusionAttempt?.status==="failed"?"GPT 검토 다시 실행":"GPT로 검토하고 Fusion 단서 만들기"}</button>
       </>}
@@ -81,6 +83,14 @@ export function FusionReview({record,disabled=false,running=false,onChange,onRun
     {fusion&&<>
       <p className="caption">{fusion.skippedEmptyOcr?"OCR 문자 0개로 GPT 호출 없이 완료":`검토 모델: ${fusion.responseModel}`} · GPT 판단은 후보이며 실제 장소를 확정하지 않습니다.</p>
       {!visible.length&&<p className="message loading">현재 표시할 Fusion 단서가 없습니다. 위치 노출 위험이 없다는 뜻은 아닙니다. 아래 보류·제외 항목과 원본도 확인할 수 있습니다.</p>}
+      <details className="fusion-hidden"><summary>OCR 전체 원문과 GPT 제외·보류 확인 ({record.ocr?.lines.length??0}개)</summary>
+        <p>OCR이 읽은 문자열을 빠짐없이 표시합니다. GPT 원래 판단과 사람의 유지·제외 판단은 별개입니다.</p>
+        {record.ocr?.lines.map(line=>{const groups=fusion.cues.filter(c=>c.ocrLineIds.includes(line.id));return <details className="panel" key={line.id}><summary>{line.id} · {line.text} · {groups.map(c=>c.decision==="not_useful"?"GPT 제외":c.decision==="uncertain"?"GPT 보류":"GPT 유지").join(", ")||"GPT 연결 없음"}</summary>
+          {fusion.lineChecks?.filter(c=>c.ocrLineId===line.id).map(c=><p key={c.ocrLineId}>항목별 검증: {c.verdict==="text"?"문자 확인":c.verdict==="non_text"?"비문자 오인식":"판단 보류"} · {c.evidence}</p>)}<p>OCR 인식 점수: {line.score.toFixed(3)} · {line.passId??"전체 검사"}</p>
+          <CueImage record={record} bbox={boundsForLines(record.ocr!,[line.id])} originalBox={boundsForLines(record.ocr!,[line.id])} editable={false} onChange={()=>{}} label={`${line.id} OCR 원문 위치`}/>
+          {groups.map(c=><div key={c.cueId}><p>GPT 해석: {c.interpretation}</p>{c.judgment&&<p>판단 구조: {c.judgment.surface} → {c.judgment.reading} → {c.judgment.information} · 채택 여부는 서버 규칙 적용</p>}<p>판단 이유: {c.reason}</p><p>불확실성: {c.uncertainty||"별도 설명 없음"}</p><p>사람 판단: {reviews.find(r=>r.cueId===c.cueId)?.status??"미검토"}</p></div>)}
+        </details>;})}
+      </details>
       {visible.map(cue=><FusionCard key={cue.cueId} record={record} cue={cue} review={reviews.find(r=>r.cueId===cue.cueId)??newFusionReview(cue)} disabled={disabled} onChange={onChange?save:undefined}/>)}
       <details className="fusion-hidden"><summary>보류·제외된 항목 확인 ({hidden.length}개)</summary>
         {hidden.map(cue=><div className="panel" key={cue.cueId}>

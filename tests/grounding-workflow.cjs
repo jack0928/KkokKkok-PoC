@@ -2,7 +2,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),sharp=require('sharp');
 let calls=0,fail=false,captured;
 const groups=[{detectionIds:['dino-0'],decision:'useful',category:'간판',interpretation:'특징적인 간판',reason:'장소를 구별할 시각적 후보',uncertainty:'실제 장소 미확인',modelRisk:'medium',relatedCandidateIndexes:[]}];
-require.cache[require.resolve('openai')]={exports:class {constructor(){this.responses={parse:async request=>{calls++;captured=request;if(fail)throw Error('mock');return {status:'completed',output_parsed:{groups},output_text:JSON.stringify({groups}),model:'mock',id:'mock',usage:null};}};}}};
+require.cache[require.resolve('openai')]={exports:class {constructor(){this.responses={parse:async request=>{calls++;captured=request;if(fail)throw Error('mock');return {status:'completed',output_parsed:{groups:groups.map(g=>({...Object.fromEntries(Object.entries(g).filter(([key])=>key!=="modelRisk")),assessment:{ruleId:"distinctive_fixed_structure",certainty:"clear",evidence:"특징적인 고정 외형",limitation:"유일성 미검증"}}))},output_text:JSON.stringify({groups}),model:'mock',id:'mock',usage:null};}};}}};
 require('../scripts/register-server.cjs');
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'kkok-grounding-'));
 process.env.SQLITE_PATH=path.join(root,'test.sqlite');process.env.IMAGE_STORAGE_PATH=path.join(root,'images');process.env.OPENAI_MODEL='mock';process.env.OPENAI_API_KEY='mock';

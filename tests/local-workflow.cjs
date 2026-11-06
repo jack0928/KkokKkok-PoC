@@ -16,7 +16,7 @@ require.cache[analyzerPath] = { exports: { analyzeImage: async (prepared) => {
   calls++;
   if (fail) { fail = false; throw new Error("mock failure"); }
   const output = { candidates: [{featureType:"text",observedCue:"모의 단서",regionDescription:"왼쪽 위",modelRisk:"medium",modelReason:"모의 모델 이유"}], limitations:[] };
-  return discovery.analysisSchema.parse({requestedModel:"mock",responseModel:"mock",responseId:"mock",analyzedAt:new Date().toISOString(),promptVersion:discovery.PROMPT_VERSION,analysisSha256:prepared.image.analysisSha256,usage:{inputTokens:1,outputTokens:1},modelOutput:output,rawOutputText:JSON.stringify(output)});
+  return discovery.analysisSchema.parse({requestedModel:"mock",responseModel:"mock",responseId:"mock",analyzedAt:new Date().toISOString(),promptVersion:"feature-discovery-v2-nontext",analysisSha256:prepared.image.analysisSha256,usage:{inputTokens:1,outputTokens:1},modelOutput:output,rawOutputText:JSON.stringify(output)});
 } } };
 const jobs = require("../src/lib/server/jobs.ts");
 const records = require("../src/lib/server/records.ts");

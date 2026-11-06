@@ -46,7 +46,7 @@ export async function analyzeRecordFusion(id: string, expectedVersion: string) {
     return withDatabase(db=>transaction(db,()=>{
       const current=findRecord(db,id);
       if(!current || current.fusion || current.fusionAttempt?.requestId!==requestId || current.fusionAttempt.status!=="running") throw new RecordConflict("실행 상태가 변경되어 결과를 저장할 수 없습니다.");
-      return write(db,{...current,fusion,fusionReviews:fusion.cues.filter(c=>c.decision==="useful").map(newFusionReview),reviewCompletedAt:null,
+      return write(db,{...current,pipeline:current.pipeline?{...current.pipeline,fusion:{status:"completed",error:null}}:undefined,fusion,fusionReviews:fusion.cues.filter(c=>c.decision==="useful").map(newFusionReview),reviewCompletedAt:null,
         fusionAttempt:{...current.fusionAttempt,status:"completed",finishedAt:new Date().toISOString(),error:null}});
     }));
   } catch(error) {
