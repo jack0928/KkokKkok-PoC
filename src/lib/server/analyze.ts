@@ -2,6 +2,7 @@ import "server-only";
 import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
 import { modelOutputSchema, PROMPT_VERSION, RISK_DEFINITION, analysisSchema, PreparedImage } from "../discovery";
+import { runVisionStages } from "./vision-stages";
 
 const instructions = `You help researchers discover visual Location Cue feature candidates, NOT ground truth.
 Analyze only the visible pixels. Never infer or output the actual shooting location, inferred address, coordinates, city, or region.
@@ -25,7 +26,13 @@ export async function analyzeImage({ image, dataUrl }: PreparedImage) {
       throw new Error("OPENAI_API_KEY와 OPENAI_MODEL 설정을 확인해 주세요.");
     }
     const client = new OpenAI({ apiKey, timeout: 90_000, maxRetries: 0 });
-    const response = await client.responses.parse({
+    const visionStagesPromise = runVisionStages({ image, dataUrl }).catch(() => ({
+      pipelineVersion: "local-vision-stages-v1",
+      image: { width: image.width, height: image.height, coordinateSpace: "analysis-normalized-tlbr" as const },
+      ocr: { model: "PaddleOCR", status: "failed" as const, items: [], error: "분석 보조 서버 연결에 실패했습니다." },
+      objectDetection: { model: "Grounding DINO", threshold: 0.25, status: "failed" as const, items: [], error: "분석 보조 서버 연결에 실패했습니다." },
+    }));
+    const [response, visionStages] = await Promise.all([client.responses.parse({
       model, store: false, max_output_tokens: 12000,
       input: [
         { role: "developer", content: instructions },
@@ -35,7 +42,7 @@ export async function analyzeImage({ image, dataUrl }: PreparedImage) {
         ] },
       ],
       text: { format: zodTextFormat(modelOutputSchema, "location_cue_candidates") },
-    });
+    }), visionStagesPromise]);
     if (response.status !== "completed" || !response.output_parsed) {
       throw new Error("VLM 응답이 완료되지 않았습니다.");
     }
@@ -44,7 +51,7 @@ export async function analyzeImage({ image, dataUrl }: PreparedImage) {
       analyzedAt: new Date().toISOString(), promptVersion: PROMPT_VERSION,
       analysisSha256: image.analysisSha256,
       usage: response.usage ? { inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens } : null,
-      modelOutput: response.output_parsed, rawOutputText: response.output_text,
+      modelOutput: response.output_parsed, visionStages, rawOutputText: response.output_text,
     });
     return analysis;
 }

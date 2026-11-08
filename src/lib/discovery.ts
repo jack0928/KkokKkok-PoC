@@ -64,6 +64,20 @@ export const analysisSchema = z.object({
   analysisSha256: z.string().regex(/^[a-f0-9]{64}$/),
   usage: z.object({ inputTokens: z.number(), outputTokens: z.number() }).nullable(),
   modelOutput: modelOutputSchema,
+  visionStages: z.object({
+    pipelineVersion: z.string().max(100),
+    image: z.object({ width: z.number().int().positive(), height: z.number().int().positive(), coordinateSpace: z.literal("analysis-normalized-tlbr") }).strict(),
+    ocr: z.object({
+      model: z.string().max(200), status: z.enum(["completed", "failed", "unavailable"]),
+      items: z.array(z.object({ text: observation, confidence: z.number().min(0).max(1).nullable(), bbox: z.tuple([z.number().min(0).max(1), z.number().min(0).max(1), z.number().min(0).max(1), z.number().min(0).max(1)]) }).strict()).max(100),
+      error: z.string().max(200).optional(),
+    }).strict(),
+    objectDetection: z.object({
+      model: z.string().max(300), threshold: z.number().min(0).max(1), status: z.enum(["completed", "failed", "unavailable"]),
+      items: z.array(z.object({ label: shortText, confidence: z.number().min(0).max(1), bbox: z.tuple([z.number().min(0).max(1), z.number().min(0).max(1), z.number().min(0).max(1), z.number().min(0).max(1)]) }).strict()).max(60),
+      error: z.string().max(200).optional(),
+    }).strict(),
+  }).strict().optional(),
   rawOutputText: z.string().max(300000),
 }).strict();
 
