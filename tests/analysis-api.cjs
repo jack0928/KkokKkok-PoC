@@ -18,7 +18,11 @@ require.cache[analyzerPath] = { exports: { analyzeImage: async ({ image }) => {
   const output = { candidates: [{ featureType: "간판", observedCue: "합성 상호 글자", regionDescription: "사진 위쪽", modelRisk: "medium", modelReason: "합성 테스트 근거" }], limitations: [] };
   return discovery.analysisSchema.parse({ requestedModel: "synthetic-model", responseModel: "synthetic-model", responseId: "synthetic-response",
     analyzedAt: new Date().toISOString(), promptVersion: discovery.PROMPT_VERSION, analysisSha256: image.analysisSha256,
-    usage: { inputTokens: 1, outputTokens: 1 }, modelOutput: output, rawOutputText: JSON.stringify(output) });
+    usage: { inputTokens: 1, outputTokens: 1 }, modelOutput: output,
+    visionStages: { pipelineVersion: "local-vision-stages-v1", image: { width: 80, height: 60, coordinateSpace: "analysis-normalized-tlbr" },
+      ocr: { model: "PaddleOCR", status: "completed", items: [{ text: "PINE CAFE", confidence: 0.97, bbox: [0.1, 0.2, 0.5, 0.3] }] },
+      objectDetection: { model: "Grounding DINO test", threshold: 0.25, status: "completed", items: [{ label: "store sign", confidence: 0.91, bbox: [0.08, 0.1, 0.55, 0.35] }] } },
+    rawOutputText: JSON.stringify(output) });
 } } };
 
 const jobs = require("../src/lib/server/jobs.ts");
@@ -74,6 +78,11 @@ async function run() {
     assert.equal(result.riskFactors[0].modelRisk, "medium");
     assert.equal(result.riskFactors[0].humanRisk, null);
     assert.equal(result.riskFactors[0].bbox, null);
+    assert.deepEqual(result.pipelineStages, { visualObservation: "completed", ocr: "completed", objectDetection: "completed" });
+    assert.equal(result.visualObservations.length, 3);
+    assert.equal(result.visualObservations[1].name, "PINE CAFE");
+    assert.deepEqual(result.visualObservations[1].bbox, [0.1, 0.2, 0.5, 0.3]);
+    assert.equal(result.visualObservations[2].source, "grounding-dino");
     assert.equal(JSON.stringify(result).includes("rawOutputText"), false);
     console.log("Analysis API synthetic workflow passed.");
   } finally {
