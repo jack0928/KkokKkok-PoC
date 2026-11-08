@@ -19,6 +19,8 @@ npm run dev
 
 http://127.0.0.1:3000 에서 Home, http://127.0.0.1:3000/feature-discovery 에서 실험을 엽니다.
 
+Spring/Android 앱에서 기존 분석 기능을 확인하는 로컬 서버 연결은 [임시 분석 API 안내](docs/analysis-api.md)를 참고하세요. 이 연결은 로컬 개발용이며 아직 배포 계약이 아닙니다.
+
 ```dotenv
 OPENAI_API_KEY=your-server-side-key
 OPENAI_MODEL=gpt-5.4-mini
@@ -74,6 +76,7 @@ src/app/                         Home, Layout, CSS
 src/app/feature-discovery/       여러 이미지 분석 요청
 src/app/review/[id]/             별도 사람 검토 페이지
 src/app/api/analysis-jobs/       업로드·원본 연결·실패 재시도
+src/app/api/inspections/         Spring 전용 단독 분석 업로드·상태 조회 (임시 계약)
 src/app/api/discovery-images/    로컬 비공개 이미지 조회
 src/lib/server/jobs.ts           이미지 보관·영속 큐·순차 분석
 scripts/                        로컬 서버·작업 프로세스 실행
