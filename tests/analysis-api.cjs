@@ -89,6 +89,15 @@ async function run() {
     assert.deepEqual(result.visualObservations[1].bbox, [0.1, 0.2, 0.5, 0.3]);
     assert.equal(result.visualObservations[2].source, "grounding-dino");
     assert.equal(JSON.stringify(result).includes("rawOutputText"), false);
+    const internalHeaders = { ...requestHeaders(requestId), host: "analysis:3000" };
+    assert.equal((await submitRoute.POST(uploadRequest(image, requestId, internalHeaders))).status, 403);
+    process.env.ANALYSIS_API_HOSTS = "analysis:3000";
+    assert.equal((await submitRoute.POST(uploadRequest(image, requestId, internalHeaders))).status, 202);
+    assert.equal((await submitRoute.POST(uploadRequest(image, requestId, { ...internalHeaders, "x-analysis-api-key": "wrong" }))).status, 401);
+    assert.equal((await submitRoute.POST(uploadRequest(image, requestId, { ...internalHeaders, origin: "http://analysis:3000" }))).status, 403);
+    const { checkRequest } = require("../src/lib/server/access.ts");
+    assert.throws(() => checkRequest(new Request("http://analysis:3000/api/discovery-records", { headers: internalHeaders })));
+    delete process.env.ANALYSIS_API_HOSTS;
     console.log("Analysis API synthetic workflow passed.");
   } finally {
     fs.rmSync(root, { recursive: true, force: true });

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { checkRequest } from "@/lib/server/access";
+import { checkAnalysisRequest } from "@/lib/server/access";
 import { MAX_IMAGE_BYTES } from "@/lib/discovery";
 import { InputError } from "@/lib/server/image";
 import { requireAnalysisApiKey, toInspectionResponse } from "@/lib/server/analysis-api";
@@ -17,7 +17,7 @@ function failure(error: unknown) {
 
 export async function POST(request: Request) {
   try {
-    checkRequest(request);
+    checkAnalysisRequest(request);
     requireAnalysisApiKey(request.headers.get("x-analysis-api-key"));
     if (request.headers.get("x-analysis-consent") !== "true")
       throw new InputError("사진 보관 및 외부 분석 전송에 대한 동의가 필요합니다.", 400);
