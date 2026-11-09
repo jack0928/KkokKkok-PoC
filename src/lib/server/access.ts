@@ -19,3 +19,16 @@ export function checkRequest(request: Request) {
     throw new InputError("로컬 테스트 페이지에서만 기록에 접근할 수 있습니다.", 403);
   }
 }
+
+/** Internal authenticated analysis routes only; the experimental UI remains loopback-only. */
+export function checkAnalysisRequest(request: Request) {
+  try { checkRequest(request); return; } catch (error) {
+    if (!(error instanceof InputError)) throw error;
+  }
+  const allowed = (process.env.ANALYSIS_API_HOSTS || "").split(",").map(value => value.trim().toLowerCase()).filter(Boolean);
+  const host = request.headers.get("host")?.toLowerCase();
+  if (!host || !allowed.includes(host) || request.headers.has("origin")
+    || (request.headers.has("sec-fetch-site") && request.headers.get("sec-fetch-site") !== "none")) {
+    throw new InputError("허용된 내부 분석 서버에서만 접근할 수 있습니다.", 403);
+  }
+}

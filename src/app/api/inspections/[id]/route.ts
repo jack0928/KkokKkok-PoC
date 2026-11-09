@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { checkRequest } from "@/lib/server/access";
+import { checkAnalysisRequest } from "@/lib/server/access";
 import { InputError } from "@/lib/server/image";
 import { requireAnalysisApiKey, toInspectionResponse } from "@/lib/server/analysis-api";
 import { recordDetail } from "@/lib/server/records";
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    checkRequest(request);
+    checkAnalysisRequest(request);
     requireAnalysisApiKey(request.headers.get("x-analysis-api-key"));
     const { id } = await context.params;
     if (!z.string().uuid().safeParse(id).success) throw new InputError("분석 ID 형식이 올바르지 않습니다.");

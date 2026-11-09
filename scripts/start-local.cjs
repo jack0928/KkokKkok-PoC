@@ -3,7 +3,7 @@ const { spawn } = require("node:child_process");
 const path = require("node:path");
 const mode = process.argv[2];
 const children = [
-  spawn(process.execPath, [require.resolve("next/dist/bin/next"), mode, "--hostname", "127.0.0.1", ...process.argv.slice(3)], { stdio: "inherit" }),
+  spawn(process.execPath, [require.resolve("next/dist/bin/next"), mode, "--hostname", process.env.ANALYSIS_BIND_HOST || "127.0.0.1", ...process.argv.slice(3)], { stdio: "inherit" }),
   spawn(process.execPath, ["--conditions=react-server", path.join(__dirname, "worker.cjs")], { stdio: "inherit", env: { ...process.env, NODE_ENV: mode === "dev" ? "development" : "production" } }),
 ];
 let stopping = false;

@@ -1,0 +1,14 @@
+**
+!package.json
+!package-lock.json
+!next.config.ts
+!tsconfig.json
+!eslint.config.mjs
+!src/**
+!scripts/**
+!tests/**
+!analysis-service/**
+!Dockerfile
+!docker/**
+**/__pycache__/**
+**/*.pyc
