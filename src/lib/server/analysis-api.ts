@@ -1,6 +1,6 @@
 import "server-only";
 import { timingSafeEqual } from "node:crypto";
-import type { DiscoveryRecord } from "../discovery";
+import { validCandidateBbox, type DiscoveryRecord } from "../discovery";
 import { InputError } from "./image";
 
 export function requireAnalysisApiKey(supplied: string | null) {
@@ -25,7 +25,8 @@ export function toInspectionResponse(record: DiscoveryRecord, job: { status: str
     title: candidate.featureType,
     description: candidate.observedCue,
     detail: candidate.regionDescription,
-    bbox: null,
+    bbox: validCandidateBbox(candidate.bbox),
+    coordinateSpace: "analysis-normalized",
     sources: ["feature-discovery-vlm"],
     assessmentSource: "model",
     modelRisk: candidate.modelRisk,
@@ -56,7 +57,8 @@ export function toInspectionResponse(record: DiscoveryRecord, job: { status: str
         modelReason: candidate.modelReason,
         source: "feature-discovery-vlm",
         confidence: null,
-        bbox: null,
+        bbox: validCandidateBbox(candidate.bbox),
+        coordinateSpace: "analysis-normalized",
       })),
       ...(visionStages?.ocr.items.map((item, index) => ({
         id: `${record.recordId}:ocr:${index + 1}`,
