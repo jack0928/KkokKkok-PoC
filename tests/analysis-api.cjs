@@ -15,7 +15,7 @@ process.env.ANALYSIS_API_KEY = "synthetic-analysis-key";
 const discovery = require("../src/lib/discovery.ts");
 const analyzerPath = require.resolve("../src/lib/server/analyze.ts");
 require.cache[analyzerPath] = { exports: { analyzeImage: async ({ image }) => {
-  const output = { candidates: [{ featureType: "간판", observedCue: "합성 상호 글자", regionDescription: "사진 위쪽", modelRisk: "medium", modelReason: "합성 테스트 근거" }], limitations: [] };
+  const output = { candidates: [{ featureType: "간판", observedCue: "합성 상호 글자", regionDescription: "사진 위쪽", bbox: [0.1, 0.15, 0.7, 0.4], modelRisk: "medium", modelReason: "합성 테스트 근거" }], limitations: [] };
   return discovery.analysisSchema.parse({ requestedModel: "synthetic-model", responseModel: "synthetic-model", responseId: "synthetic-response",
     analyzedAt: new Date().toISOString(), promptVersion: discovery.PROMPT_VERSION, analysisSha256: image.analysisSha256,
     usage: { inputTokens: 1, outputTokens: 1 }, modelOutput: output,
@@ -77,7 +77,12 @@ async function run() {
     assert.equal(result.riskFactors.length, 1);
     assert.equal(result.riskFactors[0].modelRisk, "medium");
     assert.equal(result.riskFactors[0].humanRisk, null);
-    assert.equal(result.riskFactors[0].bbox, null);
+    assert.deepEqual(result.riskFactors[0].bbox, [0.1, 0.15, 0.7, 0.4]);
+    assert.equal(result.riskFactors[0].coordinateSpace, "analysis-normalized");
+    assert.deepEqual(result.visualObservations[0].bbox, result.riskFactors[0].bbox);
+    assert.equal(discovery.validCandidateBbox([0.8, 0.1, 0.2, 0.4]), null);
+    assert.equal(discovery.validCandidateBbox(undefined), null);
+    assert(discovery.modelOutputSchema.safeParse({ candidates: [{ featureType: "text", observedCue: "synthetic", regionDescription: "top", modelRisk: "low", modelReason: "test" }], limitations: [] }).success);
     assert.deepEqual(result.pipelineStages, { visualObservation: "completed", ocr: "completed", objectDetection: "completed" });
     assert.equal(result.visualObservations.length, 3);
     assert.equal(result.visualObservations[1].name, "PINE CAFE");

@@ -53,3 +53,9 @@ PaddleOCR 또는 Grounding DINO 단계가 실패해도 GPT 관찰과 성공한 �
 - 서버는 이미지, API 키, 모델 응답 원문을 로그에 기록하지 않습니다.
 - API 키는 Spring과 분석 서버 사이에서만 사용하며 Android로 전달하지 않습니다.
 - 이 route/저장소는 개발용 로컬 연결입니다. 사용자 계정 권한, 여러 서버 배포, 장기 저장 정책, 운영 인증은 별도 설계가 필요합니다.
+
+## 편집 영역 좌표 (feature-discovery-v2-bbox)
+
+VLM 후보의 `riskFactors[].bbox`와 대응하는 `visualObservations[].bbox`를 편집에 전달합니다. `[left, top, right, bottom]` 순서의 0~1 좌표이며 `coordinateSpace: analysis-normalized`는 EXIF 방향을 보정한 분석 사진 기준입니다. 예: `{"bbox":[0.1,0.15,0.7,0.4],"coordinateSpace":"analysis-normalized"}`. 비율을 유지해 축소한 분석 사진과 원본의 방향 보정 기준은 같습니다.
+
+좌표는 모델의 근사 직사각형이며 segmentation이나 실제 위치 추론이 아닙니다. 불확실하거나 순서가 잘못된 영역은 null로 반환하고 자동 편집 대상에 넣지 않습니다. 이전 v1 저장 기록도 조회할 수 있으며 좌표 누락은 null로 표시합니다. 새 분석에만 v2 프롬프트를 적용합니다.

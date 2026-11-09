@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const RISK_DEFINITION =
   "해당 Feature가 외부 정보와 결합되었을 때 실제 촬영 위치를 좁히거나 특정하는 데 얼마나 유용한가";
-export const PROMPT_VERSION = "feature-discovery-v1";
+export const PROMPT_VERSION = "feature-discovery-v2-bbox";
 export const STORAGE_KEY = "kkokkkok:feature-discovery:v1";
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 export const FEATURE_SUGGESTIONS = [
@@ -14,6 +14,8 @@ const shortText = z.string().max(120);
 const observation = z.string().max(2000);
 const reason = z.string().max(3000);
 
+const bboxSchema = z.array(z.number().min(0).max(1)).length(4).nullable();
+
 // Open-ended featureType is intentional: this experiment discovers the taxonomy.
 export const modelOutputSchema = z.object({
   candidates: z.array(z.object({
@@ -22,9 +24,20 @@ export const modelOutputSchema = z.object({
     regionDescription: z.string().max(500),
     modelRisk: riskSchema,
     modelReason: reason,
+    bbox: bboxSchema.optional(),
   }).strict()).max(40),
   limitations: z.array(z.string().max(1000)).max(10),
 }).strict();
+
+// The model must emit every key; old saved records may omit bbox.
+export const modelRequestSchema = modelOutputSchema.extend({
+  candidates: z.array(modelOutputSchema.shape.candidates.element.extend({ bbox: bboxSchema })).max(40),
+});
+
+export function validCandidateBbox(bbox: number[] | null | undefined): number[] | null {
+  return bbox && bbox.length === 4 && bbox.every(n => Number.isFinite(n) && n >= 0 && n <= 1)
+    && bbox[0] < bbox[2] && bbox[1] < bbox[3] ? bbox : null;
+}
 
 export const imageDescriptorSchema = z.object({
   imageId: z.string().uuid(),
@@ -60,7 +73,7 @@ export const analysisSchema = z.object({
   responseModel: z.string().max(200),
   responseId: z.string().max(200),
   analyzedAt: z.string().datetime(),
-  promptVersion: z.literal(PROMPT_VERSION),
+  promptVersion: z.enum(["feature-discovery-v1", PROMPT_VERSION]),
   analysisSha256: z.string().regex(/^[a-f0-9]{64}$/),
   usage: z.object({ inputTokens: z.number(), outputTokens: z.number() }).nullable(),
   modelOutput: modelOutputSchema,
