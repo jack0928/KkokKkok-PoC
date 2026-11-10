@@ -43,6 +43,23 @@ function uploadRequest(bytes, idempotencyKey, headers = requestHeaders(idempoten
 async function run() {
   try {
     const image = await sharp({ create: { width: 80, height: 60, channels: 3, background: "#cccccc" } }).jpeg().toBuffer();
+    const deletionId = randomUUID();
+    await jobs.enqueueImage(image, deletionId);
+    const deletionContext = { params: Promise.resolve({ id: deletionId }) };
+    const deleteRequest = () => new Request(`http://127.0.0.1:3000/api/inspections/${deletionId}`, {
+      method: "DELETE", headers: requestHeaders(deletionId),
+    });
+    assert.equal((await resultRoute.DELETE(new Request(`http://127.0.0.1:3000/api/inspections/${deletionId}`, {method:"DELETE",headers:{host:"127.0.0.1:3000"}}), deletionContext)).status,401);
+    const records = require("../src/lib/server/records.ts");
+    records.withDatabase(db => db.prepare("UPDATE discovery_records SET job_status='analyzing' WHERE record_id=?").run(deletionId));
+    assert.equal((await resultRoute.DELETE(deleteRequest(), deletionContext)).status,409);
+    assert(jobs.storedImage(deletionId,"original"));
+    records.withDatabase(db => db.prepare("UPDATE discovery_records SET job_status='failed' WHERE record_id=?").run(deletionId));
+    assert.equal((await resultRoute.DELETE(deleteRequest(), deletionContext)).status,204);
+    assert.equal(records.recordDetail(deletionId),null);
+    assert.equal(fs.existsSync(path.join(root,"images",`${deletionId}.original`)),false);
+    assert.equal(fs.existsSync(path.join(root,"images",`${deletionId}.jpeg`)),false);
+    assert.equal((await resultRoute.DELETE(deleteRequest(), deletionContext)).status,204);
     const requestId = randomUUID();
     const denied = await submitRoute.POST(uploadRequest(image, requestId, { host: "127.0.0.1:3000", "idempotency-key": requestId }));
     assert.equal(denied.status, 401);

@@ -13,7 +13,7 @@ export function withDatabase<T>(operation: (db: DatabaseSync) => T): T {
   mkdirSync(dirname(path), { recursive: true });
   const db = new DatabaseSync(path);
   try {
-    db.exec(`PRAGMA busy_timeout = 5000;
+    db.exec(`PRAGMA busy_timeout = 5000; PRAGMA secure_delete = ON;
       CREATE TABLE IF NOT EXISTS discovery_records (
         record_id TEXT PRIMARY KEY,
         updated_at TEXT NOT NULL,
@@ -170,4 +170,15 @@ export function migrateRecords(input: DiscoveryRecord[]): DiscoveryRecord[] {
     }
     return allRecords(db);
   }));
+}
+
+/** Synchronous SQLite transaction prevents a queued job from starting while deletion is staged. */
+export function removeInspection(id: string): void {
+  const detail = recordDetail(id);
+  if (detail) removeRecord(id, detail.record.updatedAt);
+  // removeRecord keeps durable pending-file cleanup entries; do not report success while any remain.
+  withDatabase((db) => {
+    const remaining = db.prepare("SELECT path FROM deletion_cleanup WHERE path LIKE ?").all(`%${id}%`);
+    if (remaining.length) throw new Error("Pending image cleanup");
+  });
 }
